@@ -1,0 +1,205 @@
+"""
+Docstring for vocab.py
+"""
+
+import os
+import pyconll
+from collections import Counter
+import pickle
+import numpy as np
+
+UNK = "$UNK$"
+NUM = "$NUM$"
+NONE = "O"
+
+SOS = "$SOS$"
+EOS = "$EOS$"
+PAD = "$PAD$"
+
+
+class Vocab:
+    """
+    Class contains dictionary of dictionaries Vocab.vocab
+    Its keys are "word-index", "index-word", "grammeme-index", "index-grammeme", 
+    "char-index", "index-char", "singleton-index", "index-singleton", "sentence-index", "index-sentence"
+    Each of them corresponds to a dictionary that maps element to index or vice versa.
+    
+    Parameters
+    ----------
+    data_dir : str
+        Relative path to the folder containing /data with train, dev, and test datasets
+    data_lang : str
+        Language
+    """
+    
+    def __init__(self, train_files):
+
+        self.train_files = train_files
+        
+        self.vocab = {}
+        
+        self.dictionaries = ["word-index", "index-word", "grammeme-index", "index-grammeme", 
+                             "char-index", "index-char", "singleton-index", "index-singleton"]
+        
+        self.embeddings = None
+        
+        self.generate_dictionaries()
+                
+    def generate_dictionaries(self):
+        """
+        Loads dictionary of dictionaries (vocab["word-index"] etc.) from dictionaries.pickle or
+        creates it and saves into file 
+        """
+        
+        print("Creating vocab")
+        
+        if (os.path.exists("dictionaries.pickle")):
+            with open("dictionaries.pickle", 'rb') as f:
+                self.vocab = pickle.load(f)
+                if not len(self.vocab) == len(self.dictionaries):
+                    print("File does not contain all dictionaries")
+                    self.create_vocab()
+                else:
+                    pass
+        else:
+            print("There is no file containing dictionaries")
+            self.create_vocab()
+    
+    def create_vocab(self):
+        """
+        Creates dictionary Vocab.vocab of dictionaries {index:element} and {element:index}
+        where element is wordform, grammeme, char, singleton, sentence.
+        This function also saves it into a file via pickle package
+        """
+        
+        sentences_train = pyconll.load_from_file(self.train_files[0])
+        
+        for file in self.train_files[1:]:
+            sentences_train = sentences_train + pyconll.load.load_from_file(file)
+        
+        self.vocab["word-index"], self.vocab["index-word"] = self.get_all_wordforms(sentences_train)
+        self.vocab["grammeme-index"], self.vocab["index-grammeme"] = self.get_all_grammemes(sentences_train)
+        self.vocab["char-index"], self.vocab["index-char"] = self.get_all_chars(sentences_train)
+        self.vocab["singleton-index"], self.vocab["index-singleton"] = self.get_all_singletons(sentences_train)
+        
+        with open("dictionaries.pickle", 'wb') as f:
+            pickle.dump(self.vocab, f)
+        print("Saved dictionaries")
+    
+    def get_all_wordforms(self, sentences):
+        """
+        Gets all wordforms in the dataset and creates two dictionaries:
+        one with wordform:index pairs, other with index:wordform pairs
+        
+        Parameters
+        ----------
+        sentences : pyconll.unit.conll.Conll
+            All of the sentences from which to get wordforms, pyconll format
+        Returns
+        -------
+        dict
+            Dictionary with wordform:index pairs
+        dict
+            Dictionary with index:wordform pairs
+        """
+                
+        wordforms = set()
+        for sentence in sentences:
+            for _, token in enumerate(sentence):
+                wordforms.add(token.form)
+        wordforms = list(wordforms)
+        wordforms = [UNK] + wordforms
+        return self.get_dictionaries(wordforms)
+    
+    def get_all_grammemes(self, sentences):
+        """
+        Gets all grammemes in the dataset and creates two dictionaries:
+        one with grammeme:index pairs, other with index:grammeme pairs
+        
+        Parameters
+        ----------
+        sentences : pyconll.unit.conll.Conll
+            All of the sentences from which to get grammemes, pyconll format
+        Returns
+        -------
+        dict
+            Dictionary with grammeme:index pairs
+        dict
+            Dictionary with index:grammeme pairs
+        """
+        
+        grammemes = set()
+        for sentence in sentences:
+            for _, token in enumerate(sentence):
+                if token.upos is not None:
+                    grammemes.add("POS=" + token.upos)
+                grammemes.update([key + "=" + feat for key in token.feats for feat in token.feats[key]])
+        grammemes = list(grammemes)
+        grammemes = [PAD, SOS, EOS, UNK] + grammemes
+        return self.get_dictionaries(grammemes)
+    
+    def get_all_chars(self, sentences):
+        """
+        Gets all chars in the dataset and creates two dictionaries:
+        one with char:index pairs, other with index:char pairs
+
+        Returns
+        -------
+        dict
+            Dictionary with char:index pairs
+        dict
+            Dictionary with index:char pairs
+        """
+        
+        wordforms = set()
+        for sentence in sentences:
+            for _, token in enumerate(sentence):
+                wordforms.add(token.form)
+        wordforms = list(wordforms)        
+        
+        chars = set()
+        for words in wordforms:
+            chars.update(words)
+        chars = list(chars)
+        return self.get_dictionaries(chars)
+                
+    def get_all_singletons(self, sentences):
+        """
+        Gets all singletons in the dataset and creates two dictionaries:
+        one with singleton:index pairs, other with index:singleton pairs
+        
+        Parameters
+        ----------
+        sentences : pyconll.unit.conll.Conll
+            All of the sentences from which to get singletons, pyconll format
+        Returns
+        -------
+        dict
+            Dictionary with singleton:index pairs
+        dict
+            Dictionary with index:singleton pairs
+        """
+        
+        counter = Counter([token.form for sentence in sentences for _, token in enumerate(sentence)])
+        singletons = [token for token, cnt in counter.items() if cnt == 1]
+        return self.get_dictionaries(singletons)
+    
+    def get_dictionaries(self, data):
+        """
+        Create two dictionaries from list:
+        first with element:index pairs, second with index:element pairs
+        
+        Parameters
+        ----------
+        data : list
+            List with elements to be turned into dictionaries
+        Returns
+        -------
+        dict
+            Dictionary with element:index pairs
+        dict
+            Dictionary with index:element pairs
+        """
+        stoi = { element:index for index, element in enumerate(data) }
+        itos = { index:element for index, element in enumerate(data) }
+        return stoi, itos
