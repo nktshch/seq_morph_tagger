@@ -21,28 +21,22 @@ class Vocab:
     """
     Class contains dictionary of dictionaries Vocab.vocab
     Its keys are "word-index", "index-word", "grammeme-index", "index-grammeme", 
-    "char-index", "index-char", "singleton-index", "index-singleton", "sentence-index", "index-sentence"
-    Each of them corresponds to a dictionary that maps element to index or vice versa.
+    "char-index", "index-char", "singleton-index", "index-singleton"
+    Each of them corresponds to a dictionary that maps element to index or vice versa
     
     Parameters
     ----------
-    data_dir : str
-        Relative path to the folder containing /data with train, dev, and test datasets
-    data_lang : str
-        Language
+    train_files : list
+        List of strings with paths to the files that will be used to create vocab
     """
     
     def __init__(self, train_files):
 
         self.train_files = train_files
-        
         self.vocab = {}
-        
         self.dictionaries = ["word-index", "index-word", "grammeme-index", "index-grammeme", 
                              "char-index", "index-char", "singleton-index", "index-singleton"]
-        
-        self.embeddings = None
-        
+
         self.generate_dictionaries()
                 
     def generate_dictionaries(self):
@@ -68,15 +62,16 @@ class Vocab:
     def create_vocab(self):
         """
         Creates dictionary Vocab.vocab of dictionaries {index:element} and {element:index}
-        where element is wordform, grammeme, char, singleton, sentence.
+        where element is wordform, grammeme, char, singleton.
         This function also saves it into a file via pickle package
         """
-        
+        # There is no way to create empty sentences_train object that will allow summing itself with
+        # pyconll.unit.conll.Conll object. For this reason we first consider only the first file in the list,
+        # and then add another sentences if there is some.
         sentences_train = pyconll.load_from_file(self.train_files[0])
-        
         for file in self.train_files[1:]:
             sentences_train = sentences_train + pyconll.load.load_from_file(file)
-        
+
         self.vocab["word-index"], self.vocab["index-word"] = self.get_all_wordforms(sentences_train)
         self.vocab["grammeme-index"], self.vocab["index-grammeme"] = self.get_all_grammemes(sentences_train)
         self.vocab["char-index"], self.vocab["index-char"] = self.get_all_chars(sentences_train)
