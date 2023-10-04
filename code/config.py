@@ -9,6 +9,13 @@ config = {}
 
 config['embeddings_dimension'] = 300 # fastText embeddings
 config['sentence_batch_size'] = 5
+config['UNK'] = "$UNK$"
+config['NUM'] = "$NUM$"
+config['NONE'] = "O"
+
+config['SOS'] = "$SOS$"
+config['EOS'] = "$EOS$"
+config['PAD'] = "$PAD$"
 # add all other paths (for pickle files)
 
 def configurate():

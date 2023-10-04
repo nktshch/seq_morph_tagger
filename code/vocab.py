@@ -8,6 +8,8 @@ from collections import Counter
 import pickle
 import numpy as np
 
+# from config import config
+
 UNK = "$UNK$"
 NUM = "$NUM$"
 NONE = "O"
