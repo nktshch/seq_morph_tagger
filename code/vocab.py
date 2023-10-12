@@ -8,15 +8,12 @@ from collections import Counter
 import pickle
 import numpy as np
 
-# from config import config
-
 UNK = "$UNK$"
 NUM = "$NUM$"
 NONE = "O"
 
 SOS = "$SOS$"
 EOS = "$EOS$"
-PAD = "$PAD$"
 
 
 class Vocab:
@@ -32,9 +29,18 @@ class Vocab:
         List of strings with paths to the files that will be used to create vocab
     """
     
-    def __init__(self, train_files):
+    def __init__(self, conf):
 
-        self.train_files = train_files
+        self.train_files = conf["train_files"]
+        self.dictionary_file = conf["dictionary_file"]
+        self.PAD_word = conf["PAD_word"]
+        self.PAD_grammeme = conf["PAD_grammeme"]
+        self.PAD_char = conf["PAD_char"]
+        self.EOS = conf["EOS"]
+        self.SOS = conf["SOS"]
+        self.NUM = conf["NUM"]
+        self.UNK = conf["UNK"]
+        self.NONE = conf["NONE"]
         self.vocab = {}
         self.dictionaries = ["word-index", "index-word", "grammeme-index", "index-grammeme", 
                              "char-index", "index-char", "singleton-index", "index-singleton"]
@@ -49,8 +55,8 @@ class Vocab:
         
         print("Creating vocab")
         
-        if (os.path.exists("dictionaries.pickle")):
-            with open("dictionaries.pickle", 'rb') as f:
+        if (os.path.exists(self.dictionary_file)):
+            with open(self.dictionary_file, 'rb') as f:
                 self.vocab = pickle.load(f)
                 if not len(self.vocab) == len(self.dictionaries):
                     print("File does not contain all dictionaries")
@@ -69,7 +75,7 @@ class Vocab:
         """
         # There is no way to create empty sentences_train object that will allow summing itself with
         # pyconll.unit.conll.Conll object. For this reason we first consider only the first file in the list,
-        # and then add another sentences if there is some.
+        # and then add another sentences if there are any
         sentences_train = pyconll.load_from_file(self.train_files[0])
         for file in self.train_files[1:]:
             sentences_train = sentences_train + pyconll.load.load_from_file(file)
@@ -79,7 +85,7 @@ class Vocab:
         self.vocab["char-index"], self.vocab["index-char"] = self.get_all_chars(sentences_train)
         self.vocab["singleton-index"], self.vocab["index-singleton"] = self.get_all_singletons(sentences_train)
         
-        with open("dictionaries.pickle", 'wb') as f:
+        with open(self.dictionary_file, 'wb') as f:
             pickle.dump(self.vocab, f)
         print("Saved dictionaries")
     
@@ -105,7 +111,7 @@ class Vocab:
             for _, token in enumerate(sentence):
                 wordforms.add(token.form)
         wordforms = list(wordforms)
-        wordforms = [UNK] + wordforms
+        wordforms = [self.PAD_word, self.UNK] + wordforms
         return self.get_dictionaries(wordforms)
     
     def get_all_grammemes(self, sentences):
@@ -132,7 +138,7 @@ class Vocab:
                     grammemes.add("POS=" + token.upos)
                 grammemes.update([key + "=" + feat for key in token.feats for feat in token.feats[key]])
         grammemes = list(grammemes)
-        grammemes = [PAD, SOS, EOS, UNK] + grammemes
+        grammemes = [self.PAD_grammeme, self.SOS, self.EOS, self.UNK] + grammemes
         return self.get_dictionaries(grammemes)
     
     def get_all_chars(self, sentences):
@@ -158,6 +164,7 @@ class Vocab:
         for words in wordforms:
             chars.update(words)
         chars = list(chars)
+        chars = [self.PAD_char] + chars
         return self.get_dictionaries(chars)
                 
     def get_all_singletons(self, sentences):

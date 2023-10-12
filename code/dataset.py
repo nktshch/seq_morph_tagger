@@ -41,12 +41,13 @@ class CustomDataset(Dataset):
     docstring for CustomDataset
     """
     def __init__(self, conf):
-        self.vocab = Vocab(conf["train_files"])
+        self.conf = conf
+        self.vocab = Vocab(self.conf)
         self.sentences_pyconll = None
         self.sentences = []
-        self.get_all_sentences(conf["sentences_files"])
+        self.get_all_sentences(self.conf["conllu_files"])
         self.embeddings = []
-        self.get_all_embeddings(dimension=conf['embeddings_dimension'])
+        self.get_all_embeddings(self.conf["embeddings_file"], dimension=self.conf['embeddings_dimension'])
 
     def __len__(self):
         return len(self.sentences)
@@ -68,20 +69,18 @@ class CustomDataset(Dataset):
             labels += [grammeme_ids]
         return words, labels
 
-
-
     def get_all_sentences(self, files):
         print("Loading sentences")
 
-        if (os.path.exists("sentences.pickle")):
-            with open("sentences.pickle", 'rb') as f:
+        if (os.path.exists(self.conf["sentences_pickle"])):
+            with open(self.conf["sentences_pickle"], 'rb') as f:
                 self.sentences_pyconll = pickle.load(f)
         else:
-            print("There is no file containing sentences")
-            self.sentences_pyconll = self.sentences_pyconll + pyconll.load.load_from_file(files[0])
+            print("There is no file containing pickle sentences")
+            self.sentences_pyconll = pyconll.load.load_from_file(files[0])
             for file in files[1:]:
-                self.sentences_pyconll = pyconll.load.load_from_file(file)
-            with open("sentences.pickle", 'wb') as f:
+                self.sentences_pyconll = self.sentences_pyconll + self.load.load_from_file(file)
+            with open(self.conf["sentences_pickle"], 'wb') as f:
                 pickle.dump(self.sentences_pyconll, f)
                 print("Saved sentences")
         for sentence in self.sentences_pyconll:
@@ -90,30 +89,23 @@ class CustomDataset(Dataset):
                 words += [word.form]
             self.sentences += [words]
 
-    def get_all_embeddings(self, dimension=300):
+    def get_all_embeddings(self, file, dimension=300):
         print("Loading fastText embeddings")
 
         # fastText takes a lot of time to load embeddings (maybe there is no problem because we only load them once)
-        if (os.path.exists("embeddings.npz")):
-            with np.load("embeddings.npz") as npz:
-                self.embeddings = npz["embeddings"]
-        else:
-            print("There is no file containing embeddings")
-            fasttext.util.download_model('ru', if_exists='ignore')
-            ft = fasttext.load_model('cc.ru.300.bin')
+        assert os.path.exists(file), "There is no file containing embeddings"
 
-            self.embeddings = np.random.normal(scale=2.0 / (dimension + len(self.vocab.vocab['word-index'])),
-                                               size=(len(self.vocab.vocab['word-index']), dimension))
+        ft = fasttext.load_model(file)
 
-            total = 0
-            for word in ft.get_words():
-                if word in self.vocab.vocab["word-index"].keys():
-                    total += 1
-                    self.embeddings[self.vocab.vocab["word-index"][word]] = ft[word]
-            print(f"{total} of {len(self.vocab.vocab['word-index'])} had pretrained fastText embeddings")
+        self.embeddings = np.random.normal(scale=2.0 / (dimension + len(self.vocab.vocab['word-index'])),
+                                           size=(len(self.vocab.vocab['word-index']), dimension))
 
-            np.savez_compressed("embeddings.npz", embeddings=self.embeddings)
-            print("Saved embeddings")
+        total = 0
+        for word in ft.get_words():
+            if word in self.vocab.vocab["word-index"].keys():
+                total += 1
+                self.embeddings[self.vocab.vocab["word-index"][word]] = ft[word]
+        print(f"{total} of {len(self.vocab.vocab['word-index'])} words had pretrained fastText embeddings")
 
 
 if __name__ == "__main__":
