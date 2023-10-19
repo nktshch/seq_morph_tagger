@@ -8,13 +8,6 @@ from collections import Counter
 import pickle
 import numpy as np
 
-UNK = "$UNK$"
-NUM = "$NUM$"
-NONE = "O"
-
-SOS = "$SOS$"
-EOS = "$EOS$"
-
 
 class Vocab:
     """
@@ -25,17 +18,15 @@ class Vocab:
     
     Parameters
     ----------
-    train_files : list
-        List of strings with paths to the files that will be used to create vocab
+    conf : dict
+        Dictionary with configuration parameters
     """
     
     def __init__(self, conf):
 
         self.train_files = conf["train_files"]
         self.dictionary_file = conf["dictionary_file"]
-        self.PAD_word = conf["PAD_word"]
-        self.PAD_grammeme = conf["PAD_grammeme"]
-        self.PAD_char = conf["PAD_char"]
+        self.PAD = conf["PAD"]
         self.EOS = conf["EOS"]
         self.SOS = conf["SOS"]
         self.NUM = conf["NUM"]
@@ -111,7 +102,7 @@ class Vocab:
             for _, token in enumerate(sentence):
                 wordforms.add(token.form)
         wordforms = list(wordforms)
-        wordforms = [self.PAD_word, self.UNK] + wordforms
+        wordforms = [self.PAD, self.UNK] + wordforms
         return self.get_dictionaries(wordforms)
     
     def get_all_grammemes(self, sentences):
@@ -138,7 +129,7 @@ class Vocab:
                     grammemes.add("POS=" + token.upos)
                 grammemes.update([key + "=" + feat for key in token.feats for feat in token.feats[key]])
         grammemes = list(grammemes)
-        grammemes = [self.PAD_grammeme, self.SOS, self.EOS, self.UNK] + grammemes
+        grammemes = [self.PAD, self.SOS, self.EOS, self.UNK] + grammemes
         return self.get_dictionaries(grammemes)
     
     def get_all_chars(self, sentences):
@@ -164,7 +155,7 @@ class Vocab:
         for words in wordforms:
             chars.update(words)
         chars = list(chars)
-        chars = [self.PAD_char] + chars
+        chars = [self.PAD] + chars
         return self.get_dictionaries(chars)
                 
     def get_all_singletons(self, sentences):

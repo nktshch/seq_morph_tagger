@@ -29,10 +29,6 @@ def main(conf):
     for grammeme in dataset[66][1][8]:
         print(dataset.vocab.vocab["index-grammeme"][grammeme])
 
-    # dataset is needed to load raw sentences. It has __len__ and __getitem__
-    # dataloader has access to dataset and to vocab. It creates tensors for tokens, chars, features. It works with paddings for
-    # words, grammemes, chars. It can be done in CustomDataset
-
     # we assume that we know grammemes and other stuff if we work with dataset
     # if we don't, we have to handle them separately in a different method -  function predict() that doesn't use CustomDataset
 
@@ -40,6 +36,7 @@ class CustomDataset(Dataset):
     """
     docstring for CustomDataset
     """
+    
     def __init__(self, conf):
         self.conf = conf
         self.vocab = Vocab(self.conf)
@@ -47,7 +44,7 @@ class CustomDataset(Dataset):
         self.sentences = []
         self.get_all_sentences(self.conf["conllu_files"])
         self.embeddings = []
-        self.get_all_embeddings(self.conf["embeddings_file"], dimension=self.conf['embeddings_dimension'])
+        self.get_all_embeddings(self.conf["embeddings_file"], dimension=self.conf['word_embeddings_dimension'])
 
     def __len__(self):
         return len(self.sentences)

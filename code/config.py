@@ -6,16 +6,17 @@ import argparse
 
 config = {}
 
-config['embeddings_dimension'] = 300 # fastText embeddings
+config['word_embeddings_dimension'] = 300 # fastText embeddings
+config['char_embeddings_dimension'] = 100
+config['grammeme_embeddings_dimension'] = 150
 config['sentence_batch_size'] = 5
 config['UNK'] = "$UNK$"
 config['NUM'] = "$NUM$"
 config['NONE'] = "O"
 config['SOS'] = "$SOS$"
 config['EOS'] = "$EOS$"
-config['PAD_word'] = "$PAD_word$"
-config['PAD_grammeme'] = "$PAD_grammeme$"
-config['PAD_char'] = "$PAD_char$"
+config['PAD'] = "$PAD$"
+
 
 
 config['dictionary_file'] = ".\\data\\dictionaries.pickle" # file where all the dictionaries will be stored
