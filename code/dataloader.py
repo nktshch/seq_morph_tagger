@@ -9,36 +9,44 @@ import dataset
 from config import configurate
 from config import config
 
+# all layers and classes should be descendants of nn.Module and all of them should have nn.forward
+
 def main(conf):
     # print(conf)
-
     model = Model(conf)
-    batch = model.batches(start=65)
-    collated_batch = custom_collate(batch)
-    model.print_batch(collated_batch) # debug
+    loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
+    for batch in loader:
+        for sentence in batch:
+            for index in range(len(sentence[1])):
+                grammemes = [model.data.vocab.vocab['index-grammeme'][grammeme] for grammeme in sentence[1][index]]
+                print(f"{model.data.vocab.vocab['index-word'][sentence[0][index][0]]} --- {grammemes}")
+        break
 
+class WordEmbeddings(nn.Module):
+    def __init__(self, conf, data):
+        super().__init__()
+        self.word_embeddings = nn.Embedding.from_pretrained(torch.from_numpy(data.embeddings))
+        self.charLSTM = nn.LSTM(input_size=conf['char_embeddings_dimension'], hidden_size=conf['char_embeddings_hidden'], bidirectional=True)
+        self.char_embeddings = nn.Embedding(len(data.vocab.vocab['char-index']), conf["char_embeddings_dimension"])
 
-class Model: # for now, it is here, maybe move it elsewhere
+    def forward(self):
+        self.char_embeddings = self.charLSTM(self.char_embeddings)
+        return self.word_embeddings, self.char_embeddings
+
+class Model(nn.Module): # for now, it is here, maybe move it elsewhere
     def __init__(self, conf):
+        super().__init__()
         self.conf = conf
         self.data = dataset.CustomDataset(self.conf)
-        self.word_embeddings = None
-        self.char_embeddings = None
+        self.word_embeddings = WordEmbeddings(self.conf, self.data)
         self.grammeme_embeddings = None
         self.batch_size = conf["sentence_batch_size"]
 
-    def add_embeddings(self):
-        self.word_embeddings = nn.Embedding.from_pretrained(self.data.embeddings)
-        self.char_embeddings = nn.Embedding(len(self.data.vocab.vocab['char-index']), self.conf["char_embeddings_dimension"])
-        self.grammeme_embeddings = nn.Embedding(self.data.vocab.vocab['grammeme-index'], self.conf["grammeme_embeddings_dimension"])
+    # train - separate function that has instance of dataloader
 
-    def batches(self, start=0):
-        """
-        Given CustomDataset instance, creates batches of given size
-        """
-
-        batch = [self.data[i] for i in range(start, start + self.batch_size)]
-        return batch
+    # model produces vector of size (n_grammemes) that will be compared to one-hot representation of the labels
+    # 150 (grammeme_embeddings_hidden) is used in lstm
+    # in sequential model, we find the index of max value and pass it forward
 
     def print_batch(self, batch): # for debug purposes
         sentences = [element[0] for element in batch]
@@ -47,10 +55,9 @@ class Model: # for now, it is here, maybe move it elsewhere
                 word = [self.data.vocab.vocab["index-char"][char] for char in word[1:]]
                 print(*word)
 
-
-def custom_collate(batch):
+def collate_batch(batch):
     """
-    Function takes samples given by CustomDataset and creates batches to be fed into the model
+    Function takes batch created with CustomDataset and performs padding
 
     Parameters
     ---------
