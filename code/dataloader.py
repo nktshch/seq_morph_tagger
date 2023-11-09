@@ -17,11 +17,12 @@ from config import config
 def main(conf):
     # print(conf)
     model = Model(conf)
-    loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
-    progress_bar = tqdm(enumerate(loader))
-    for iteration, batch in progress_bar:
-        for words, labels in batch:
-            logits, loss = model(words, labels)
+    n = 0
+    print(model.data.sentences[66])
+    # loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
+    # progress_bar = tqdm(enumerate(loader), disable=True)
+    # for _, batch in progress_bar:
+    #     logits, loss = model(batch)
 
 class WordEmbeddings(nn.Module):
     def __init__(self, conf, data):
@@ -29,22 +30,30 @@ class WordEmbeddings(nn.Module):
         self.conf = conf
         self.data = data
         self.word_embeddings = nn.Embedding.from_pretrained(torch.from_numpy(data.embeddings))
-        self.charLSTM = nn.LSTM(input_size=self.conf['char_embeddings_dimension'], hidden_size=self.conf['char_embeddings_hidden'], bidirectional=True)
         self.char_embeddings = nn.Embedding(len(data.vocab.vocab['char-index']), self.conf["char_embeddings_dimension"])
+        self.charLSTM = nn.LSTM(input_size=self.conf['char_embeddings_dimension'],
+                                hidden_size=self.conf['char_LSTM_hidden'], bidirectional=True, batch_first=True)
+        self.wordLSTM = nn.LSTM(input_size=(self.conf['word_embeddings_dimension'] + self.conf['char_LSTM_hidden'] * 2),
+                                hidden_size=self.conf['word_LSTM_hidden'], bidirectional=True, batch_first=True,
+                                dropout=self.conf['word_LSTM_input_dropout'])
 
-    def forward(self, words_idx):
-        words_indices = []
-        chars_indices = []
-        for indices in words_idx:
-            words_indices += [indices[0]]
-            chars_indices += [indices[1:]]
-        words = self.word_embeddings(torch.Tensor(words_indices).int())
-        chars = self.char_embeddings(torch.Tensor([index for word in chars_indices for index in word]).int())
-        chars, (hn, cn) = self.charLSTM(chars)
-        chars = torch.reshape(chars, (len(words_idx), len(chars_indices[0]), 300)) # my mistake here! have to handle all of it differently because of how LSTM module works
-        chars = torch.mean(chars, dim=1)
-        words = torch.cat((words, chars), dim=1)
-        return words, chars
+    def forward(self, words_batch, chars_batch):
+        # words_batch is of shape (batch_size, max_sentence_length)
+        # char_batch is of shape (batch_size, max_sentence_length, max_word_length - 1)
+        assert words_batch.shape[0] == self.conf['sentence_batch_size']
+        assert chars_batch.shape[0] == self.conf['sentence_batch_size']
+
+        words_batch = torch.from_numpy(words_batch)
+        chars_batch = torch.from_numpy(chars_batch).view(-1, chars_batch.shape[2])
+        words = self.word_embeddings(words_batch)
+        chars = self.char_embeddings(chars_batch)
+        _, (hn, cn) = self.charLSTM(chars)
+        chars = hn.view(self.conf['sentence_batch_size'], -1, hn.shape[2] * 2)
+        words = torch.concat((words, chars), dim=2)
+        _, (hn_words, cn_words) = self.wordLSTM(words)
+        words = hn_words.view(self.conf['sentence_batch_size'], -1, hn_words.shape[2] * 2)
+        # final shape is (batch_size, max_sentence_length, 2 * word_LSTM_hidden)
+        return words
 
 class Model(nn.Module): # for now, it is here, maybe move it elsewhere
     def __init__(self, conf):
@@ -55,19 +64,23 @@ class Model(nn.Module): # for now, it is here, maybe move it elsewhere
         self.grammeme_embeddings = None
         self.batch_size = conf["sentence_batch_size"]
 
-    def forward(self, words_idx, labels_idx):
-        # words_idx and labels_idx are already for a single sentence, not for a batch (see main())
-        words = self.word_embeddings(words_idx)
+    def forward(self, batch):
+        words_batch = []
+        chars_batch = []
+        for sentence in batch: # it is needed to retrieve batches of words and chars, because they have different shapes
+            words_batch += [sentence[0]]
+            chars_batch += [sentence[1]]
+        words = self.word_embeddings(np.asarray(words_batch), np.asarray(chars_batch))
         logits = 0
         loss = 0
         return logits, loss
     # train - separate function that has instance of dataloader
 
     # model produces vector of size (n_grammemes) that will be compared to one-hot representation of the labels
-    # 150 (grammeme_embeddings_hidden) is used in lstm
+    # 150 (grammeme_LSTM_hidden) is used in lstm
     # in sequential model, we find the index of max value and pass it forward
 
-def collate_batch(batch, pad_id=0, eos_id=2):
+def collate_batch(batch, pad_id=0, eos_id=2): # do all preprocessing here
     """
     Function takes batch created with CustomDataset and performs padding
 
@@ -83,16 +96,23 @@ def collate_batch(batch, pad_id=0, eos_id=2):
     sentences = [element[0] for element in batch] # sentences is a list of all list of words
     max_sentence_length = max(map(lambda x: len(x), sentences))
     max_word_length = max([max(map(lambda x: len(x), sentence)) for sentence in sentences])
+    collated_batch = []
     for words, labels in batch:
+        words_indices = []
+        chars_indices = []
         for word in words:
             word += [pad_id] * (max_word_length - len(word)) # id of the pad token must be 0
-        words += [[pad_id] * max_word_length] * (max_sentence_length - len(words))
+            words_indices += [word[0]]
+            chars_indices += [word[1:]]
+        words_indices += [pad_id] * (max_sentence_length - len(words))
+        chars_indices += [[pad_id] * (max_word_length - 1)] * (max_sentence_length - len(words))
 
         for grammemes in labels:
             grammemes += [eos_id, pad_id] # id of the eos token must be 2
-    return batch
-    # one-hot encoding for chars
-    # return torch.utils.data.default_collate(batch)
+        collated_batch += [[words_indices, chars_indices, labels]]
+
+    return collated_batch
+    # return torch.utils.data.default_collate(collated_batch)
 
 
 if __name__ == "__main__":

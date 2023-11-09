@@ -8,8 +8,10 @@ config = {}
 
 config['word_embeddings_dimension'] = 300 # fastText embeddings
 config['char_embeddings_dimension'] = 100
-config['char_embeddings_hidden'] = 150 # size of the hidden layer for char LSTM
-config['grammeme_embeddings_hidden'] = 150
+config['char_LSTM_hidden'] = 150
+config['word_LSTM_hidden'] = 400
+config['word_LSTM_input_dropout'] = 0.5
+config['grammeme_LSTM_hidden'] = 150
 config['sentence_batch_size'] = 5
 config['UNK'] = "$UNK$"
 config['NUM'] = "$NUM$"
