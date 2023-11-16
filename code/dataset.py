@@ -2,7 +2,6 @@
 Docstring for dataset.py
 """
 
-# site: papers with code 
 import os
 import pickle
 import pyconll
@@ -34,7 +33,14 @@ def main(conf):
 
 class CustomDataset(Dataset):
     """
-    docstring for CustomDataset
+    Class loads fastText embeddings and CONLL-U sentences from files. It inherits Dataset class of PyTorch module.
+    __len__ returns the number of sentences.
+    __getitem__ returns indices of words, chars, and grammemes for a sentence with a given index.
+
+    Parameters
+    ----------
+    conf : dict
+        Dictionary with configuration parameters
     """
     
     def __init__(self, conf):
@@ -67,6 +73,16 @@ class CustomDataset(Dataset):
         return words, labels
 
     def get_all_sentences(self, files):
+        """
+        Loads sentences from .pickle file if there is one, and from .conllu files otherwise. In the second case, saves
+        the sentences in the .pickle file.
+
+        Parameters
+        ----------
+        files : list
+            List of strings that are paths to .conllu files. Only used if there is no .pickle file
+        """
+
         print("Loading sentences")
 
         if (os.path.exists(self.conf["sentences_pickle"])):
@@ -87,6 +103,18 @@ class CustomDataset(Dataset):
             self.sentences += [words]
 
     def get_all_embeddings(self, file, dimension=300):
+        """
+        Loads embeddings from file and stores them in the class variable as list of ndarrays. If a word doesn't have
+        the embedding, it is assigned a random one using normal distribution.
+
+        Parameters
+        ----------
+        file : str
+            The file containing fastText embeddings
+        dimension : int, default 300
+            The dimension of embeddings
+        """
+
         print("Loading fastText embeddings")
 
         # fastText takes a lot of time to load embeddings (maybe there is no problem because we only load them once)

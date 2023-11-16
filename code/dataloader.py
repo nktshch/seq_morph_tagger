@@ -17,14 +17,28 @@ from config import config
 def main(conf):
     # print(conf)
     model = Model(conf)
-    n = 0
-    print(model.data.sentences[66])
-    # loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
-    # progress_bar = tqdm(enumerate(loader), disable=True)
-    # for _, batch in progress_bar:
-    #     logits, loss = model(batch)
+    loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
+    progress_bar = tqdm(enumerate(loader), disable=True)
+    for _, (words_batch, chars_batch, labels_batch) in progress_bar:
+        logits, loss = model(words_batch, chars_batch, labels_batch)
 
 class WordEmbeddings(nn.Module):
+    """
+    Class creates embeddings for words and chars, puts them through LSTMs to produce word embeddings. It has access to
+    the instance of CustomDataset, created by Model class.
+
+    Method forward takes words_batch -- size (batch_size, max_sentence_length) -- and
+    chars_batch -- size (batch_size * max_sentence_length, max_word_length) -- as an input. It returns output from the
+    LSTM for every word in a sentence. The final shape of the output is (batch_size, max_sentence_length, 2 * word_LSTM_hidden).
+
+    Parameters
+    ----------
+    conf : dict
+        Dictionary with configuration parameters
+    data : CustomDataset
+        Class instance from dataset.py
+    """
+
     def __init__(self, conf, data):
         super().__init__()
         self.conf = conf
@@ -34,43 +48,69 @@ class WordEmbeddings(nn.Module):
         self.charLSTM = nn.LSTM(input_size=self.conf['char_embeddings_dimension'],
                                 hidden_size=self.conf['char_LSTM_hidden'], bidirectional=True, batch_first=True)
         self.wordLSTM = nn.LSTM(input_size=(self.conf['word_embeddings_dimension'] + self.conf['char_LSTM_hidden'] * 2),
-                                hidden_size=self.conf['word_LSTM_hidden'], bidirectional=True, batch_first=True,
-                                dropout=self.conf['word_LSTM_input_dropout'])
+                                hidden_size=self.conf['word_LSTM_hidden'], bidirectional=True, batch_first=True)
 
     def forward(self, words_batch, chars_batch):
-        # words_batch is of shape (batch_size, max_sentence_length)
-        # char_batch is of shape (batch_size, max_sentence_length, max_word_length - 1)
-        assert words_batch.shape[0] == self.conf['sentence_batch_size']
-        assert chars_batch.shape[0] == self.conf['sentence_batch_size']
+        """
+        Takes batches of indices of words and chars and creates embeddings with LSTM.
 
-        words_batch = torch.from_numpy(words_batch)
-        chars_batch = torch.from_numpy(chars_batch).view(-1, chars_batch.shape[2])
+        Parameters
+        ----------
+        words_batch : torch.Tensor
+            Tensor of words indices for every word in a batch. Size (batch_size, max_sentence_length)
+        chars_batch : torch.Tensor
+            Tensor of chars indices for every word in a batch. Size (batch_size * max_sentence_length, max_word_length)
+        Returns
+        -------
+        torch.Tensor
+            Tensor of shape (batch_size, max_sentence_length, 2 * word_LSTM_hidden), containing embeddings for every word
+            in a sentence
+        """
+
         words = self.word_embeddings(words_batch)
         chars = self.char_embeddings(chars_batch)
+        # words has shape (batch_size, max_sentence_length, word_embeddings_dimension)
+        # chars has shape (batch_size * max_sentence_length, max_word_length, char_embeddings_dimension)
         _, (hn, cn) = self.charLSTM(chars)
+        # hn has shape (2, batch_size * max_sentence_length, char_LSTM_hidden)
+        # 2 because of bidirectional LSTM
         chars = hn.view(self.conf['sentence_batch_size'], -1, hn.shape[2] * 2)
+        # chars has shape (batch_size, max_sentence_length, 2 * char_LSTM_hidden)
         words = torch.concat((words, chars), dim=2)
-        _, (hn_words, cn_words) = self.wordLSTM(words)
-        words = hn_words.view(self.conf['sentence_batch_size'], -1, hn_words.shape[2] * 2)
+        output, _ = self.wordLSTM(words.float()) # for some reason, without .float(), RuntimeError is raised (expected type Double but found Float)
         # final shape is (batch_size, max_sentence_length, 2 * word_LSTM_hidden)
-        return words
+        # print(output.shape)
+        return output
 
 class Model(nn.Module): # for now, it is here, maybe move it elsewhere
+    """
+    Class takes batches produced by DataLoader and assignes embeddings to words using WordEmbeddings class.
+    Creates an instance of CustomDataset.
+
+    Parameters
+    ----------
+    conf : dict
+        Dictionary with configuration parameters
+    """
+
     def __init__(self, conf):
         super().__init__()
         self.conf = conf
         self.data = dataset.CustomDataset(self.conf)
         self.word_embeddings = WordEmbeddings(self.conf, self.data)
         self.grammeme_embeddings = None
-        self.batch_size = conf["sentence_batch_size"]
 
-    def forward(self, batch):
-        words_batch = []
-        chars_batch = []
-        for sentence in batch: # it is needed to retrieve batches of words and chars, because they have different shapes
-            words_batch += [sentence[0]]
-            chars_batch += [sentence[1]]
-        words = self.word_embeddings(np.asarray(words_batch), np.asarray(chars_batch))
+    def forward(self, words_batch, chars_batch, labels_batch):
+        """
+        Parameters
+        ----------
+        words_batch : torch.Tensor
+            Tensor of words indices for every word in a batch. Size (batch_size, max_sentence_length)
+        chars_batch : torch.Tensor
+            Tensor of chars indices for every word in a batch. Size (batch_size * max_sentence_length, max_word_length)
+        """
+
+        words = self.word_embeddings(words_batch, chars_batch)
         logits = 0
         loss = 0
         return logits, loss
@@ -82,7 +122,8 @@ class Model(nn.Module): # for now, it is here, maybe move it elsewhere
 
 def collate_batch(batch, pad_id=0, eos_id=2): # do all preprocessing here
     """
-    Function takes batch created with CustomDataset and performs padding
+    Function takes batch created with CustomDataset and performs padding. batch consists of indices of words,
+    chars, and labels (grammemes). The returned batches are tensors.
 
     Parameters
     ---------
@@ -92,11 +133,19 @@ def collate_batch(batch, pad_id=0, eos_id=2): # do all preprocessing here
         The id of the pad token in all dictionaries
     eos_id : int, default 2
         The id of the eos token
+    Returns
+    -------
+    tuple
+        (words_batch, chars_batch, labels_batch). words_batch is a torch.Tensor and has size (batch_size, max_sentence_length).
+        chars_batch is a torch.Tensor and has size (batch_size * max_sentence_length, max_word_length).
     """
+
     sentences = [element[0] for element in batch] # sentences is a list of all list of words
     max_sentence_length = max(map(lambda x: len(x), sentences))
     max_word_length = max([max(map(lambda x: len(x), sentence)) for sentence in sentences])
-    collated_batch = []
+    words_batch = []
+    chars_batch = []
+    labels_batch = []
     for words, labels in batch:
         words_indices = []
         chars_indices = []
@@ -109,10 +158,15 @@ def collate_batch(batch, pad_id=0, eos_id=2): # do all preprocessing here
 
         for grammemes in labels:
             grammemes += [eos_id, pad_id] # id of the eos token must be 2
-        collated_batch += [[words_indices, chars_indices, labels]]
 
-    return collated_batch
-    # return torch.utils.data.default_collate(collated_batch)
+        words_batch += [words_indices]
+        chars_batch += [chars_indices]
+        labels_batch += [labels]
+
+    words_batch = torch.tensor(words_batch, dtype=torch.int)
+    chars_batch = torch.tensor(chars_batch, dtype=torch.int)
+    chars_batch = chars_batch.view(-1, chars_batch.shape[2])
+    return words_batch, chars_batch, labels_batch
 
 
 if __name__ == "__main__":
