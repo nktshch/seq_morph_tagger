@@ -22,7 +22,7 @@ config['PAD'] = "$PAD$"
 
 
 
-config['dictionary_file'] = ".\\data\\dictionaries.pickle" # file where all the dictionaries will be stored
+config['dictionary_file'] = r".\data\dictionaries.pickle" # file where all the dictionaries will be stored
 
 def configurate():
     """

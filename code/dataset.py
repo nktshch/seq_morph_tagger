@@ -33,14 +33,16 @@ def main(conf):
 
 class CustomDataset(Dataset):
     """
-    Class loads fastText embeddings and CONLL-U sentences from files. It inherits Dataset class of PyTorch module.
-    __len__ returns the number of sentences.
-    __getitem__ returns indices of words, chars, and grammemes for a sentence with a given index.
+    Class loads fastText embeddings and CONLL-U sentences from files. It inherits Dataset class of PyTorch module
 
     Parameters
     ----------
     conf : dict
         Dictionary with configuration parameters
+    Examples
+    --------
+        dataset = CustomDataset(conf) \n
+        print(dataset.vocab.vocab["index-word"][dataset[66][0][8][0]])
     """
     
     def __init__(self, conf):
@@ -53,9 +55,17 @@ class CustomDataset(Dataset):
         self.get_all_embeddings(self.conf["embeddings_file"], dimension=self.conf['word_embeddings_dimension'])
 
     def __len__(self):
+        """
+        Returns the number of sentences in dataset
+        """
+
         return len(self.sentences)
 
     def __getitem__(self, index):
+        """
+        Returns indices of words, chars, and grammemes for a sentence with a given index
+        """
+
         words = []
         labels = []
         for word in self.sentences[index]:
