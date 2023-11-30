@@ -33,6 +33,7 @@ class Encoder(nn.Module):
                                 hidden_size=self.conf['char_LSTM_hidden'], bidirectional=True, batch_first=True)
         self.wordLSTM = nn.LSTM(input_size=(self.conf['word_embeddings_dimension'] + self.conf['char_LSTM_hidden'] * 2),
                                 hidden_size=self.conf['word_LSTM_hidden'], bidirectional=True, batch_first=True)
+        self.wordDropout = nn.Dropout(p=self.conf['word_LSTM_input_dropout'])
 
     def forward(self, words_batch, chars_batch):
         """
@@ -61,7 +62,9 @@ class Encoder(nn.Module):
         chars = hn.view(self.conf['sentence_batch_size'], -1, hn.shape[2] * 2)
         # chars has shape (batch_size, max_sentence_length, 2 * char_LSTM_hidden)
         words = torch.concat((words, chars), dim=2)
-        output, _ = self.wordLSTM(words)
+        words = self.wordDropout(words)
+        output, _ = self.wordLSTM(words) # still have to figure out dropout
+        # in the author's code cell state are also used
         # final shape is (batch_size, max_sentence_length, 2 * word_LSTM_hidden)
-        # print(output.shape)
+
         return output

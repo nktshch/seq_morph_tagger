@@ -9,6 +9,7 @@ from tqdm import tqdm
 
 import dataset
 from encoder import Encoder
+from decoder import Decoder
 from config import configurate
 from config import config
 
@@ -19,7 +20,7 @@ def main(conf):
     # print(conf)
     model = Model(conf)
     loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
-    progress_bar = tqdm(enumerate(loader))
+    progress_bar = tqdm(enumerate(loader), disable=True)
     for _, (words_batch, chars_batch, labels_batch) in progress_bar:
         logits, loss = model(words_batch, chars_batch, labels_batch)
 
@@ -45,7 +46,8 @@ class Model(nn.Module): # for now, it is here, maybe move it elsewhere
         super().__init__()
         self.conf = conf
         self.data = dataset.CustomDataset(self.conf)
-        self.word_embeddings = Encoder(self.conf, self.data)
+        self.encoder = Encoder(self.conf, self.data) # provides words embeddings
+        self.decoder = Decoder(self.conf, self.data)
         self.grammeme_embeddings = None
 
     def forward(self, words_batch, chars_batch, labels_batch):
@@ -56,9 +58,15 @@ class Model(nn.Module): # for now, it is here, maybe move it elsewhere
             Tensor of words indices for every word in a batch. Size (batch_size, max_sentence_length)
         chars_batch : torch.Tensor
             Tensor of chars indices for every word in a batch. Size (batch_size * max_sentence_length, max_word_length)
+        labels_batch : torch.Tensor
+            Tensor of labels indices for every word in a batch. Size (batch_size * max_sentence_length, max_label_length)
         """
 
-        words = self.word_embeddings(words_batch, chars_batch)
+        encoder_output = self.encoder(words_batch, chars_batch) # shape (batch_size, max_sentence_length, 2 * word_LSTM_hidden)
+        decoder_hidden = encoder_output.reshape(-1, encoder_output.shape[2])
+        hidden = self.decoder(labels_batch, decoder_hidden)
+
+        # print(decoder_input.shape())
         logits = 0
         loss = 0
         return logits, loss
@@ -84,19 +92,23 @@ def collate_batch(batch, pad_id=0, eos_id=2): # do all preprocessing here
     Returns
     -------
     tuple
-        (words_batch, chars_batch, labels_batch). words_batch is a torch.Tensor and has size (batch_size, max_sentence_length).
-        chars_batch is a torch.Tensor and has size (batch_size * max_sentence_length, max_word_length).
+        (words_batch, chars_batch, labels_batch). All of them have type torch.Tensor. Size of words_batch is (batch_size, max_sentence_length).
+        Size of chars_batch is (batch_size * max_sentence_length, max_word_length). Size of labels_batch is
+        (batch_size * max_sentence_length, max_label_length)
     """
 
     sentences = [element[0] for element in batch] # sentences is a list of all list of words
+    tags = [element[1] for element in batch] # tags is a list of all lists of grammemes
     max_sentence_length = max(map(lambda x: len(x), sentences))
     max_word_length = max([max(map(lambda x: len(x), sentence)) for sentence in sentences])
+    max_label_length = 1 + max([max(map(lambda x: len(x), tag)) for tag in tags]) # +1 because of the eos token
     words_batch = []
     chars_batch = []
     labels_batch = []
     for words, labels in batch:
         words_indices = []
         chars_indices = []
+        labels_indices = []
         for word in words:
             word += [pad_id] * (max_word_length - len(word)) # id of the pad token must be 0
             words_indices += [word[0]]
@@ -104,16 +116,21 @@ def collate_batch(batch, pad_id=0, eos_id=2): # do all preprocessing here
         words_indices += [pad_id] * (max_sentence_length - len(words))
         chars_indices += [[pad_id] * (max_word_length - 1)] * (max_sentence_length - len(words))
 
-        for grammemes in labels:
-            grammemes += [eos_id, pad_id] # id of the eos token must be 2
+        for label in labels:
+            label += [eos_id] # id of the eos token must be 2
+            label += [pad_id] * (max_label_length - len(label))
+            labels_indices += [label]
+        labels_indices += [[pad_id] * max_label_length] * (max_sentence_length - len(words))
 
         words_batch += [words_indices]
         chars_batch += [chars_indices]
-        labels_batch += [labels]
+        labels_batch += [labels_indices]
 
     words_batch = torch.tensor(words_batch, dtype=torch.int)
     chars_batch = torch.tensor(chars_batch, dtype=torch.int)
     chars_batch = chars_batch.view(-1, chars_batch.shape[2])
+    labels_batch = torch.tensor(labels_batch, dtype=torch.int)
+    labels_batch = labels_batch.view(-1, labels_batch.shape[2])
     return words_batch, chars_batch, labels_batch
 
 
