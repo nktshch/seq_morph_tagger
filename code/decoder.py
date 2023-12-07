@@ -16,25 +16,36 @@ class Decoder(nn.Module):
         self.conf = conf
         self.data = data
         self.grammeme_embeddings = nn.Embedding(len(data.vocab.vocab['grammeme-index']), self.conf["grammeme_embeddings_dimension"])
-        self.grammemeLSTMcell = nn.LSTMCell(input_size=self.conf['grammeme_embeddings_dimension'], hidden_size=2 * self.conf['word_LSTM_hidden'])
+        self.grammemeLSTMcell = nn.LSTMCell(input_size=self.conf['grammeme_embeddings_dimension'], hidden_size=self.conf['grammeme_LSTM_hidden'])
         self.grammemeDropout = nn.Dropout(p=self.conf['grammeme_LSTM_input_dropout'])
+        self.linear = nn.Linear(in_features=self.conf['grammeme_LSTM_hidden'], out_features=len(data.vocab.vocab['grammeme-index']))
 
-    def forward(self, labels_batch, decoder_hidden):
-        start_indices = torch.zeros(decoder_hidden.shape[0]).fill_(self.data.vocab.vocab['grammeme-index']["$SOS$"]).int()
-        train_indices = torch.concat((start_indices.view(1, -1), labels_batch[:, :-1].transpose(0, 1)), dim=0)
+    def forward(self, labels_batch, decoder_hidden, decoder_cell):
+        labels_batch = labels_batch.transpose(0, 1)
         # during training, these will be fed one at a time, instead of outputs at each time step
-
-        train_grammemes = self.grammeme_embeddings(train_indices) # embeddings of grammemes,
+        labels = self.grammeme_embeddings(labels_batch) # embeddings of grammemes,
         # size (max_grammeme_length, batch_size * max_sentence_length, grammeme_embeddings_dimension)
         # size[0] = loop length (sequence length), size[1] = size of the batch, size[3] = input size
         hk = decoder_hidden
-        ck = torch.zeros(hk.size()) # we should use real c0, produced by Encoder
-        hidden = []
-        for grammemes in train_grammemes:
-            hk1, ck1 = self.grammemeLSTMcell(grammemes, (hk, ck))
-            hk = hk1
-            ck = ck1
-            hidden += [hk1]
+        ck = decoder_cell
+        predictions = []
+        # this is incomplete!
+        if self.training:
+            for grammemes in labels:
+                hk, ck = self.grammemeLSTMcell(grammemes, (hk, ck))
+                probabilities_batch = nn.functional.softmax(self.linear(hk), dim=1)
+                predictions_batch = torch.argmax(probabilities_batch, dim=1)
+                predictions += [predictions_batch]
 
-        # hidden has size (max_grammeme_length, batch_size * max_sentence_length, 2 * word_LSTM_hidden)
-        return hidden
+        else:
+            grammemes = labels[0]
+            for step in range(self.conf['decoder_max_iterations']):
+                hk, ck = self.grammemeLSTMcell(grammemes, (hk, ck))
+                probabilities_batch = nn.functional.softmax(self.linear(hk), dim=1)
+                predictions_batch = torch.argmax(probabilities_batch, dim=1)
+                grammemes = self.grammeme_embeddings(predictions_batch)
+                predictions += [predictions_batch]
+        predictions = torch.stack(predictions).transpose(0, 1)
+        print(predictions.size())
+        # predictions has size (max_grammeme_length, batch_size * max_sentence_length)
+        return predictions
