@@ -13,19 +13,18 @@ from decoder import Decoder
 from config import configurate
 from config import config
 
-# all layers and classes should be descendants of nn.Module and all of them should have forward()
-# multitask learning
 
 def main(conf):
     # print(conf)
     model = Model(conf)
+    model.cuda()
     loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
     progress_bar = tqdm(enumerate(loader), disable=True)
     for _, (words_batch, chars_batch, labels_batch) in progress_bar:
         logits, loss = model(words_batch, chars_batch, labels_batch)
 
 
-class Model(nn.Module): # for now, it is here, maybe move it elsewhere
+class Model(nn.Module):
     """
     Class takes batches produced by DataLoader and assignes embeddings to words using WordEmbeddings class.
     Creates an instance of CustomDataset.
@@ -59,22 +58,40 @@ class Model(nn.Module): # for now, it is here, maybe move it elsewhere
         chars_batch : torch.Tensor
             Tensor of chars indices for every word in a batch. Size (batch_size * max_sentence_length, max_word_length)
         labels_batch : torch.Tensor
-            Tensor of labels indices for every word in a batch. Size (batch_size * max_sentence_length, max_label_length)
+            Tensor of labels indices for every word in a batch. Size (max_label_length, batch_size * max_sentence_length)
         """
 
         encoder_hidden, encoder_cell = self.encoder(words_batch, chars_batch) # shape (max_sentence_length, batch_size, grammeme_LSTM_hidden)
         decoder_hidden = encoder_hidden.view(-1, encoder_hidden.size(dim=2))
         decoder_cell = encoder_cell.view(-1, encoder_cell.size(dim=2))
-        hidden = self.decoder(labels_batch, decoder_hidden, decoder_cell)
-
+        predictions = self.decoder(labels_batch, decoder_hidden, decoder_cell)
+        tags = self.predictions_to_grammemes(predictions)
         logits = 0
         loss = 0
         return logits, loss
+
+    def predictions_to_grammemes(self, predictions):
+        """
+        Turns indices of predictions produced by decoder into actual grammemes
+        Parameters
+        ----------
+        predictions : torch.Tensor
+            2D Tensor containing indices
+        Returns
+        -------
+        list
+            List of lists of predicions
+        """
+        tags = []
+        for tag_indices in predictions:
+            tag = []
+            for grammeme_index in tag_indices:
+                tag += [self.data.vocab.vocab['index-grammeme'][grammeme_index.item()]]
+            tags += [tag]
+        return tags
     # train - separate function that has instance of dataloader
 
     # model produces vector of size (n_grammemes) that will be compared to one-hot representation of the labels
-    # 150 (grammeme_LSTM_hidden) is used in lstm
-    # in sequential model, we find the index of max value and pass it forward
 
 def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing here
     """
@@ -96,7 +113,7 @@ def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing h
     tuple
         (words_batch, chars_batch, labels_batch). All of them have type torch.Tensor. Size of words_batch is (max_sentence_length, batch_size).
         Size of chars_batch is (batch_size * max_sentence_length, max_word_length). Size of labels_batch is
-        (batch_size * max_sentence_length, max_label_length)
+        (max_label_length, batch_size * max_sentence_length)
     """
 
     sentences = [element[0] for element in batch] # sentences is a list of all list of words
@@ -134,8 +151,8 @@ def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing h
     chars_batch = torch.tensor(chars_batch, dtype=torch.int)
     chars_batch = chars_batch.view(-1, chars_batch.shape[2])
     labels_batch = torch.tensor(labels_batch, dtype=torch.int)
-    labels_batch = labels_batch.view(-1, labels_batch.shape[2])
-    return words_batch, chars_batch, labels_batch
+    labels_batch = labels_batch.view(-1, labels_batch.shape[2]).permute(1, 0)
+    return words_batch.cuda(), chars_batch.cuda(), labels_batch.cuda()
 
 
 if __name__ == "__main__":

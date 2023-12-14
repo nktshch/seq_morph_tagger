@@ -60,15 +60,15 @@ class Encoder(nn.Module):
         # chars has shape (batch_size * max_sentence_length, max_word_length, char_embeddings_dimension)
         _, (hn, cn) = self.charLSTM(chars)
         # hn has shape (char_LSTM_directions, batch_size * max_sentence_length, char_LSTM_hidden)
-        chars = hn.transpose(0, 1).contiguous().view(self.conf['sentence_batch_size'], -1, hn.shape[2] * self.conf['char_LSTM_directions']).transpose(0, 1)
+        chars = hn.permute(1, 0, 2).contiguous().view(self.conf['sentence_batch_size'], -1, hn.shape[2] * self.conf['char_LSTM_directions']).permute(1, 0, 2)
         # we have to transpose twice because of how .view() changes shapes of tensors. Thoughtless usage can lead to serious mistakes!
         # chars has shape (max_sentence_length, batch_size, char_LSTM_directions * char_LSTM_hidden)
         words = torch.concat((words, chars), dim=2)
         words = self.wordDropout(words)
         # words has shape (max_sentence_length, batch_size, word_embeddings_dimension + char_LSTM_directions * char_LSTM_hidden)
 
-        hk = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size))
-        ck = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size))
+        hk = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).cuda()
+        ck = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).cuda()
         hidden_forward = []
         cell_forward = []
         for word in words:
@@ -79,8 +79,8 @@ class Encoder(nn.Module):
         cell_forward = torch.stack(cell_forward)
 
         if self.conf['word_LSTM_bidirectional']:
-            hk = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size))
-            ck = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size))
+            hk = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).cuda()
+            ck = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).cuda()
             hidden_backward = []
             cell_backward = []
             for word in words.flip(dims=[0]):
