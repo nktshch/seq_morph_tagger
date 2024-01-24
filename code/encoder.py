@@ -67,8 +67,8 @@ class Encoder(nn.Module):
         words = self.wordDropout(words)
         # words has shape (max_sentence_length, batch_size, word_embeddings_dimension + char_LSTM_directions * char_LSTM_hidden)
 
-        hk = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).cuda()
-        ck = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).cuda()
+        hk = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).to(self.conf['device'])
+        ck = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).to(self.conf['device'])
         hidden_forward = []
         cell_forward = []
         for word in words:
@@ -79,8 +79,8 @@ class Encoder(nn.Module):
         cell_forward = torch.stack(cell_forward)
 
         if self.conf['word_LSTM_bidirectional']:
-            hk = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).cuda()
-            ck = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).cuda()
+            hk = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).to(self.conf['device'])
+            ck = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).to(self.conf['device'])
             hidden_backward = []
             cell_backward = []
             for word in words.flip(dims=[0]):

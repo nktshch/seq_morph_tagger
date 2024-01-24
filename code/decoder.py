@@ -28,11 +28,13 @@ class Decoder(nn.Module):
         hk = decoder_hidden
         ck = decoder_cell
         predictions = []
+        probabilities = []
         # this is incomplete!
         if self.training:
             for grammemes in labels:
                 hk, ck = self.grammemeLSTMcell(grammemes, (hk, ck))
                 probabilities_batch = self.linear(hk)
+                probabilities += [probabilities_batch]
                 predictions_batch = torch.argmax(probabilities_batch, dim=1)
                 predictions += [predictions_batch]
 
@@ -41,9 +43,11 @@ class Decoder(nn.Module):
             for _ in range(self.conf['decoder_max_iterations']):
                 hk, ck = self.grammemeLSTMcell(grammemes, (hk, ck))
                 probabilities_batch = self.linear(hk)
+                probabilities += [probabilities_batch]
                 predictions_batch = torch.argmax(probabilities_batch, dim=1)
                 grammemes = self.grammeme_embeddings(predictions_batch)
                 predictions += [predictions_batch]
+        probabilities = torch.stack(probabilities)
         predictions = torch.stack(predictions).permute(1, 0)
         # predictions has size (batch_size * max_sentence_length, max_grammeme_length)
-        return predictions
+        return predictions, probabilities

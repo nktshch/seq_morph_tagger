@@ -16,12 +16,13 @@ from config import config
 
 def main(conf):
     # print(conf)
+
     model = Model(conf)
-    model.cuda()
+    model.to(conf['device'])
     loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
     progress_bar = tqdm(enumerate(loader), disable=True)
     for _, (words_batch, chars_batch, labels_batch) in progress_bar:
-        logits, loss = model(words_batch, chars_batch, labels_batch)
+        tags, loss = model(words_batch, chars_batch, labels_batch)
 
 
 class Model(nn.Module):
@@ -49,6 +50,9 @@ class Model(nn.Module):
         self.decoder = Decoder(self.conf, self.data)
         self.grammeme_embeddings = None
 
+        self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
+        self.optimizer = torch.optim.SGD(self.parameters(), lr=self.conf['learning_rate'])
+
     def forward(self, words_batch, chars_batch, labels_batch):
         """
         Parameters
@@ -64,15 +68,21 @@ class Model(nn.Module):
         encoder_hidden, encoder_cell = self.encoder(words_batch, chars_batch) # shape (max_sentence_length, batch_size, grammeme_LSTM_hidden)
         decoder_hidden = encoder_hidden.view(-1, encoder_hidden.size(dim=2))
         decoder_cell = encoder_cell.view(-1, encoder_cell.size(dim=2))
-        predictions = self.decoder(labels_batch, decoder_hidden, decoder_cell)
+        predictions, probabilities = self.decoder(labels_batch, decoder_hidden, decoder_cell)
         tags = self.predictions_to_grammemes(predictions)
-        logits = 0
-        loss = 0
-        return logits, loss
+
+        targets = torch.flatten(labels_batch).to(torch.long)
+        probabilities = torch.flatten(probabilities, start_dim=0, end_dim=1)
+        loss = self.loss(probabilities, targets)
+        loss.backward()
+        self.optimizer.step()
+        print(loss)
+
+        return tags, loss
 
     def predictions_to_grammemes(self, predictions):
         """
-        Turns indices of predictions produced by decoder into actual grammemes
+        Turns indices of predictions produced by decoder into actual grammemes (strings)
         Parameters
         ----------
         predictions : torch.Tensor
@@ -152,7 +162,7 @@ def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing h
     chars_batch = chars_batch.view(-1, chars_batch.shape[2])
     labels_batch = torch.tensor(labels_batch, dtype=torch.int)
     labels_batch = labels_batch.view(-1, labels_batch.shape[2]).permute(1, 0)
-    return words_batch.cuda(), chars_batch.cuda(), labels_batch.cuda()
+    return words_batch.to(config['device']), chars_batch.to(config['device']), labels_batch.to(config['device'])
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@ config.py contains dictionary with all necessary hyperparameters as well as path
 """
 
 import argparse
+from torch import cuda
 
 config = {}
 
@@ -18,6 +19,8 @@ config['char_LSTM_hidden'] = 150
 
 config['word_LSTM_input_dropout'] = 0.5
 config['grammeme_LSTM_input_dropout'] = 0.5
+
+config['learning_rate'] = 1.0
 
 config['decoder_max_iterations'] = 12
 config['sentence_batch_size'] = 5
@@ -38,6 +41,8 @@ def configurate():
     """
 
     parse_arguments()
+
+    config['device'] = 'cuda' if cuda.is_available() else 'cpu'
     config['word_LSTM_directions'] = 1 + int(config['word_LSTM_bidirectional'])
     config['char_LSTM_directions'] = 1 + int(config['char_LSTM_bidirectional'])
     config['grammeme_LSTM_hidden'] = config['word_LSTM_directions'] * config['word_LSTM_hidden']
