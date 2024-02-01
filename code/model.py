@@ -5,6 +5,7 @@ Docstring for model.py
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 import dataset
@@ -16,13 +17,12 @@ from config import config
 
 def main(conf):
     # print(conf)
-
-    model = Model(conf)
-    model.to(conf['device'])
-    loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
-    progress_bar = tqdm(enumerate(loader), disable=True)
-    for _, (words_batch, chars_batch, labels_batch) in progress_bar:
-        tags, loss = model(words_batch, chars_batch, labels_batch)
+    model = Model(conf).to(conf['device'])
+    trainer = Trainer(conf, model).to(conf['device'])
+    # loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
+    # progress_bar = tqdm(enumerate(loader), disable=True)
+    # for _, (words_batch, chars_batch, labels_batch) in progress_bar:
+    #     tags = model(words_batch, chars_batch, labels_batch)
 
 
 class Model(nn.Module):
@@ -50,9 +50,6 @@ class Model(nn.Module):
         self.decoder = Decoder(self.conf, self.data)
         self.grammeme_embeddings = None
 
-        self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
-        self.optimizer = torch.optim.SGD(self.parameters(), lr=self.conf['learning_rate'])
-
     def forward(self, words_batch, chars_batch, labels_batch):
         """
         Parameters
@@ -71,14 +68,7 @@ class Model(nn.Module):
         predictions, probabilities = self.decoder(labels_batch, decoder_hidden, decoder_cell)
         tags = self.predictions_to_grammemes(predictions)
 
-        targets = torch.flatten(labels_batch).to(torch.long)
-        probabilities = torch.flatten(probabilities, start_dim=0, end_dim=1)
-        loss = self.loss(probabilities, targets)
-        loss.backward()
-        self.optimizer.step()
-        print(loss)
-
-        return tags, loss
+        return tags, probabilities
 
     def predictions_to_grammemes(self, predictions):
         """
@@ -101,7 +91,27 @@ class Model(nn.Module):
         return tags
     # train - separate function that has instance of dataloader
 
-    # model produces vector of size (n_grammemes) that will be compared to one-hot representation of the labels
+
+class Trainer(nn.Module):
+    def __init__(self, conf, model):
+        super().__init__()
+        self.conf = conf
+        self.model = model
+        self.loader = DataLoader(self.model.data, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
+        self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.conf['learning_rate'])
+
+    def train_loop(self):
+        progress_bar = tqdm(enumerate(self.loader), disable=True)
+        for _, (words_batch, chars_batch, labels_batch) in progress_bar:
+            tags, probabilities = self.model(words_batch, chars_batch, labels_batch)
+            probabilities = torch.flatten(probabilities, start_dim=0, end_dim=1)
+            targets = torch.flatten(labels_batch).to(torch.long)
+
+            loss = self.loss(probabilities, targets)
+            loss.backward()
+            self.optimizer.step()
+
 
 def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing here
     """
