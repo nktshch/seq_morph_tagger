@@ -19,6 +19,7 @@ def main(conf):
     # print(conf)
     model = Model(conf).to(conf['device'])
     trainer = Trainer(conf, model).to(conf['device'])
+    trainer.train_loop()
     # loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
     # progress_bar = tqdm(enumerate(loader), disable=True)
     # for _, (words_batch, chars_batch, labels_batch) in progress_bar:
@@ -52,6 +53,8 @@ class Model(nn.Module):
 
     def forward(self, words_batch, chars_batch, labels_batch):
         """
+        Uses Encoder and Decoder to perform one pass on a sinle batch.
+
         Parameters
         ----------
         words_batch : torch.Tensor
@@ -60,6 +63,10 @@ class Model(nn.Module):
             Tensor of chars indices for every word in a batch. Size (batch_size * max_sentence_length, max_word_length)
         labels_batch : torch.Tensor
             Tensor of labels indices for every word in a batch. Size (max_label_length, batch_size * max_sentence_length)
+        Returns
+        -------
+        tuple
+            Tuple consists of predicted grammemes and their probabilities.
         """
 
         encoder_hidden, encoder_cell = self.encoder(words_batch, chars_batch) # shape (max_sentence_length, batch_size, grammeme_LSTM_hidden)
@@ -102,15 +109,19 @@ class Trainer(nn.Module):
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.conf['learning_rate'])
 
     def train_loop(self):
-        progress_bar = tqdm(enumerate(self.loader), disable=True)
-        for _, (words_batch, chars_batch, labels_batch) in progress_bar:
+        progress_bar = enumerate(self.loader)
+        for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
+            self.optimizer.zero_grad()
             tags, probabilities = self.model(words_batch, chars_batch, labels_batch)
-            probabilities = torch.flatten(probabilities, start_dim=0, end_dim=1)
-            targets = torch.flatten(labels_batch).to(torch.long)
+            probabilities = torch.flatten(probabilities, start_dim=0, end_dim=1) # flatten is needed because loss doesn't accept multiple dimensions
+            targets = torch.flatten(labels_batch[1:]).to(torch.long) # slice is taken to ignore SOS token
 
             loss = self.loss(probabilities, targets)
             loss.backward()
             self.optimizer.step()
+            if iteration % 20 == 19:
+                print(f"iteration {iteration + 1}: loss {loss.item()}")
+
 
 
 def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing here

@@ -72,6 +72,7 @@ class Encoder(nn.Module):
         hidden_forward = []
         cell_forward = []
         for word in words:
+            # TODO: somehow implement input, state, and output dropout
             hk, ck = self.wordLSTMcell(word, (hk, ck))
             hidden_forward += [hk]
             cell_forward += [ck]
