@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
 
 import dataset
 from encoder import Encoder
@@ -107,20 +107,26 @@ class Trainer(nn.Module):
         self.loader = DataLoader(self.model.data, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
         self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.conf['learning_rate'])
+        self.writer = SummaryWriter()
 
     def train_loop(self):
         progress_bar = enumerate(self.loader)
+        running_loss = 0.0
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
             self.optimizer.zero_grad()
             tags, probabilities = self.model(words_batch, chars_batch, labels_batch)
-            probabilities = torch.flatten(probabilities, start_dim=0, end_dim=1) # flatten is needed because loss doesn't accept multiple dimensions
-            targets = torch.flatten(labels_batch[1:]).to(torch.long) # slice is taken to ignore SOS token
 
-            loss = self.loss(probabilities, targets)
+            probabilities = probabilities[:-1] # slice is taken to ignore the last prediction which is generated from EOS token.
+            targets = labels_batch[1:].to(torch.long) # slice is taken to ignore SOS token
+
+            loss = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             loss.backward()
             self.optimizer.step()
+
+            running_loss += loss.item()
             if iteration % 20 == 19:
-                print(f"iteration {iteration + 1}: loss {loss.item()}")
+                self.writer.add_scalar("training loss", running_loss, iteration)
+                running_loss = 0.0
 
 
 

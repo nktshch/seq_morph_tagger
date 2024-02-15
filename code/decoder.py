@@ -48,8 +48,7 @@ class Decoder(nn.Module):
         -------
         tuple
             Tuple consists of predicted grammemes and probabilities. The first tensor has shape (batch_size * max_sentence_length, max_grammeme_length).
-            The second tensor has shape (max_grammeme_length - 1, batch_size * max_sentence_length, grammemes_in_vocab). -1 is taken to match the shape of
-            targets during loss computation.
+            The second tensor has shape (max_grammeme_length, batch_size * max_sentence_length, grammemes_in_vocab)
         """
         # during training, these will be fed one at a time, instead of outputs at each time step
         labels = self.grammeme_embeddings(labels_batch) # embeddings of grammemes,
@@ -82,5 +81,4 @@ class Decoder(nn.Module):
         predictions = torch.stack(predictions).permute(1, 0)
         # predictions has shape (batch_size * max_sentence_length, max_grammeme_length)
         # probabilities has shape (max_grammeme_length, batch_size * max_sentence_length, grammemes_in_vocab)
-        # The slice is taken to ignore the last prediction which is generated from EOS token.
-        return predictions, probabilities[:-1]
+        return predictions, probabilities
