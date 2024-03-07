@@ -5,7 +5,7 @@ Docstring for model.py
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 
 import dataset
@@ -18,7 +18,7 @@ from config import config
 def main(conf):
     # print(conf)
     model = Model(conf).to(conf['device'])
-    trainer = Trainer(conf, model).to(conf['device'])
+    trainer = Trainer(conf, model, subset_size=0).to(conf['device'])
     trainer.train_loop()
     # loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
     # progress_bar = tqdm(enumerate(loader), disable=True)
@@ -80,6 +80,7 @@ class Model(nn.Module):
     def predictions_to_grammemes(self, predictions):
         """
         Turns indices of predictions produced by decoder into actual grammemes (strings)
+
         Parameters
         ----------
         predictions : torch.Tensor
@@ -98,13 +99,37 @@ class Model(nn.Module):
         return tags
     # train - separate function that has instance of dataloader
 
-
 class Trainer(nn.Module):
-    def __init__(self, conf, model):
+    def __init__(self, conf, model, subset_size=0):
+        """
+        Class performs training. More info will be added later
+
+        Parameters
+        ----------
+        conf : dict
+            Dictionary with configuration parameters
+        model : Model
+            Instance of class containing model parameters
+        subset_size : float of int
+            Whether to use full dataset from model.data, or only some part of it. If int, treated as the number
+            of samples from model.data. If float, should be between 0 and 1, treated as the proportion of the dataset used
+            during training. If 0, whole dataset is used
+        """
         super().__init__()
         self.conf = conf
         self.model = model
-        self.loader = DataLoader(self.model.data, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
+
+        if subset_size == 0:
+            self.loader = DataLoader(self.model.data, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
+        elif type(subset_size) == int:
+            subset = subset_from_dataset(self.model.data, subset_size)
+            self.loader = DataLoader(subset, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
+        elif type(subset_size) == float:
+            subset = subset_from_dataset(self.model.data, int(subset_size * len(self.model.data)))
+            self.loader = DataLoader(subset, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
+        else:
+            raise TypeError("Only ints and floats are allowed")
+
         self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.conf['learning_rate'])
         self.writer = SummaryWriter()
@@ -112,6 +137,7 @@ class Trainer(nn.Module):
     def train_loop(self):
         progress_bar = enumerate(self.loader)
         running_loss = 0.0
+        print(len(self.loader))
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
             self.optimizer.zero_grad()
             tags, probabilities = self.model(words_batch, chars_batch, labels_batch)
@@ -124,10 +150,12 @@ class Trainer(nn.Module):
             self.optimizer.step()
 
             running_loss += loss.item()
-            if iteration % 20 == 19:
-                self.writer.add_scalar("training loss", running_loss, iteration)
+            print_every = 20
+            if iteration % print_every == 0:
+                self.writer.add_scalar("training loss", running_loss / print_every, iteration)
                 running_loss = 0.0
 
+        print("Train loop complete")
 
 
 def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing here
@@ -191,6 +219,11 @@ def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing h
     labels_batch = labels_batch.view(-1, labels_batch.shape[2]).permute(1, 0)
     return words_batch.to(config['device']), chars_batch.to(config['device']), labels_batch.to(config['device'])
 
+def subset_from_dataset(data, n):
+    """
+    Outputs first n entries from data (type Dataset) as another dataset
+    """
+    return Subset(data, range(n))
 
 if __name__ == "__main__":
     configurate()
