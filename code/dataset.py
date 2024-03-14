@@ -48,9 +48,13 @@ class CustomDataset(Dataset):
     def __init__(self, conf):
         self.conf = conf
         self.vocab = Vocab(self.conf)
-        self.sentences_pyconll = None
-        self.sentences = []
-        self.get_all_sentences(self.conf["conllu_files"])
+        self.train_sentences_pyconll = None
+        self.valid_sentences_pyconll = None
+        self.test_sentences_pyconll = None
+        self.train_sentences = []
+        self.valid_sentences = []
+        self.test_sentences = []
+        self.get_all_sentences()
         self.embeddings = []
         self.get_all_embeddings(self.conf["embeddings_file"], dimension=self.conf['word_embeddings_dimension'])
 
@@ -82,35 +86,81 @@ class CustomDataset(Dataset):
             labels += [grammeme_ids]
         return words, labels
 
-    def get_all_sentences(self, files):
+    def get_all_sentences(self):
         """
-        Loads sentences from .pickle file if there is one, and from .conllu files otherwise. In the second case, saves
-        the sentences in the .pickle file.
-
-        Parameters
-        ----------
-        files : list
-            List of strings that are paths to .conllu files. Only used if there is no .pickle file
+        Loads train, valid, test sentences from their .pickle files, if they exists.
+        Otherwise, loads them from .conllu files and stores in .pickle files, if they are given as arguments.
+        Also, stores the sentences as 3 lists of lists of words (strings)
         """
 
-        print("Loading sentences")
-
-        if (os.path.exists(self.conf["sentences_pickle"])):
-            with open(self.conf["sentences_pickle"], 'rb') as f:
-                self.sentences_pyconll = pickle.load(f)
+        ### train sentences ###
+        print("Loading train sentences")
+        if (os.path.exists(self.conf["train_sentences_pickle"])): # check if .pickle file exists
+            with open(self.conf["train_sentences_pickle"], 'rb') as f:
+                self.train_sentences_pyconll = pickle.load(f)
         else:
-            print("There is no file containing pickle sentences")
-            self.sentences_pyconll = pyconll.load.load_from_file(files[0])
-            for file in files[1:]:
-                self.sentences_pyconll = self.sentences_pyconll + self.load.load_from_file(file)
-            with open(self.conf["sentences_pickle"], 'wb') as f:
-                pickle.dump(self.sentences_pyconll, f)
-                print("Saved sentences")
-        for sentence in self.sentences_pyconll:
+            print("There is no .pickle file containing train sentences")
+            files = self.conf["train_files"]
+            self.train_sentences_pyconll = pyconll.load.load_from_file(files[0])
+            for file in self.files[1:]:
+                self.train_sentences_pyconll = self.train_sentences_pyconll + self.load.load_from_file(file)
+
+            if (os.path.exists(self.conf["train_sentences_pickle"])):
+                with open(self.conf["train_sentences_pickle"], 'wb') as f:
+                    pickle.dump(self.train_sentences_pyconll, f)
+                    print("Saved train sentences")
+
+        for sentence in self.train_sentences_pyconll:
             words = []
             for word in sentence:
                 words += [word.form]
-            self.sentences += [words]
+            self.train_sentences += [words]
+
+        ### valid sentences ###
+        print("Loading valid sentences")
+        if (os.path.exists(self.conf["valid_sentences_pickle"])):  # check if .pickle file exists
+            with open(self.conf["valid_sentences_pickle"], 'rb') as f:
+                self.valid_sentences_pyconll = pickle.load(f)
+        else:
+            print("There is no .pickle file containing validation sentences")
+            files = self.conf["valid_files"]
+            self.valid_sentences_pyconll = pyconll.load.load_from_file(files[0])
+            for file in self.files[1:]:
+                self.valid_sentences_pyconll = self.valid_sentences_pyconll + self.load.load_from_file(file)
+
+            if (os.path.exists(self.conf["valid_sentences_pickle"])):
+                with open(self.conf["valid_sentences_pickle"], 'wb') as f:
+                    pickle.dump(self.valid_sentences_pyconll, f)
+                    print("Saved validation sentences")
+
+        for sentence in self.valid_sentences_pyconll:
+            words = []
+            for word in sentence:
+                words += [word.form]
+            self.valid_sentences += [words]
+
+        ### test sentences ###
+        print("Loading test sentences")
+        if (os.path.exists(self.conf["test_sentences_pickle"])):  # check if .pickle file exists
+            with open(self.conf["test_sentences_pickle"], 'rb') as f:
+                self.test_sentences_pyconll = pickle.load(f)
+        else:
+            print("There is no .pickle file containing test sentences")
+            files = self.conf["test_files"]
+            self.test_sentences_pyconll = pyconll.load.load_from_file(files[0])
+            for file in self.files[1:]:
+                self.test_sentences_pyconll = self.test_sentences_pyconll + self.load.load_from_file(file)
+
+            if (os.path.exists(self.conf["test_sentences_pickle"])):
+                with open(self.conf["test_sentences_pickle"], 'wb') as f:
+                    pickle.dump(self.test_sentences_pyconll, f)
+                    print("Saved test sentences")
+
+        for sentence in self.test_sentences_pyconll:
+            words = []
+            for word in sentence:
+                words += [word.form]
+            self.test_sentences += [words]
 
     def get_all_embeddings(self, file, dimension=300):
         """

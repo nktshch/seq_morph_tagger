@@ -19,7 +19,7 @@ def main(conf):
     # print(conf)
     model = Model(conf).to(conf['device'])
     trainer = Trainer(conf, model, subset_size=0).to(conf['device'])
-    trainer.train_loop()
+    trainer.train()
     # loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
     # progress_bar = tqdm(enumerate(loader), disable=True)
     # for _, (words_batch, chars_batch, labels_batch) in progress_bar:
@@ -97,7 +97,7 @@ class Model(nn.Module):
                 tag += [self.data.vocab.vocab['index-grammeme'][grammeme_index.item()]]
             tags += [tag]
         return tags
-    # train - separate function that has instance of dataloader
+
 
 class Trainer(nn.Module):
     def __init__(self, conf, model, subset_size=0):
@@ -120,27 +120,39 @@ class Trainer(nn.Module):
         self.model = model
 
         if subset_size == 0:
-            self.loader = DataLoader(self.model.data, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
-        elif type(subset_size) == int:
+            subset = self.model.data
+        elif isinstance(subset_size, int) and subset_size > 0:
             subset = subset_from_dataset(self.model.data, subset_size)
-            self.loader = DataLoader(subset, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
-        elif type(subset_size) == float:
+        elif isinstance(subset_size, float) and 0.0 < subset_size < 1.0:
             subset = subset_from_dataset(self.model.data, int(subset_size * len(self.model.data)))
-            self.loader = DataLoader(subset, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
         else:
-            raise TypeError("Only ints and floats are allowed")
+            raise TypeError("Only positive ints and floats between 0 and 1 are allowed")
+        self.loader = DataLoader(subset, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
 
         self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.conf['learning_rate'])
         self.writer = SummaryWriter()
+        self.current_epoch = 0
 
-    def train_loop(self):
+    def epoch_loops(self):
+        print(f"{len(self.loader)} batches")
+        for epoch in range(self.conf['max_epochs']):
+            self.train_loop()
+            metrics, error = self.evaluate()
+            self.current_epoch += 1
+
+
+    def train_epoch(self):
+        self.model.encoder.train()
+        self.model.decoder.train()
         progress_bar = enumerate(self.loader)
         running_loss = 0.0
-        print(len(self.loader))
+        print_every = 20
+        current_epoch_tags = [] # stores tags for this epoch
+
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
             self.optimizer.zero_grad()
-            tags, probabilities = self.model(words_batch, chars_batch, labels_batch)
+            _, probabilities = self.model(words_batch, chars_batch, labels_batch)
 
             probabilities = probabilities[:-1] # slice is taken to ignore the last prediction which is generated from EOS token.
             targets = labels_batch[1:].to(torch.long) # slice is taken to ignore SOS token
@@ -150,12 +162,28 @@ class Trainer(nn.Module):
             self.optimizer.step()
 
             running_loss += loss.item()
-            print_every = 20
-            if iteration % print_every == 0:
-                self.writer.add_scalar("training loss", running_loss / print_every, iteration)
+
+            if (self.current_epoch * len(self.loader) + iteration) % print_every == 0:
+                self.writer.add_scalar("training loss", running_loss / print_every, self.current_epoch * len(self.loader) + iteration)
                 running_loss = 0.0
 
-        print("Train loop complete")
+        print("One epoch complete")
+
+
+    def evaluate(self):
+        self.model.encoder.eval()
+        self.model.decoder.eval()
+        metrics = 0
+        error = 0
+
+        # code similar to train_epoch
+        progress_bar = enumerate(self.loader) # ?
+        for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
+            tags, _ = self.model(words_batch, chars_batch, labels_batch)
+
+            # calculate error and metrics
+
+        return metrics, error
 
 
 def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing here
@@ -224,6 +252,7 @@ def subset_from_dataset(data, n):
     Outputs first n entries from data (type Dataset) as another dataset
     """
     return Subset(data, range(n))
+
 
 if __name__ == "__main__":
     configurate()

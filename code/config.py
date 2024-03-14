@@ -21,6 +21,7 @@ config['word_LSTM_input_dropout'] = 0.5
 config['grammeme_LSTM_input_dropout'] = 0.5
 
 config['learning_rate'] = 1.0
+config['max_epochs'] = 400
 
 config['decoder_max_iterations'] = 12
 config['sentence_batch_size'] = 5
@@ -51,14 +52,22 @@ def configurate():
 def parse_arguments():
     argp = argparse.ArgumentParser()
     argp.add_argument('phase', help='train, test')
-    argp.add_argument('train_files', nargs='+')
-    argp.add_argument('sentences_pickle', help='file for (or containing) preloaded CoNLL-U data, .pickle extension')
-    argp.add_argument('--conllu_files', nargs='+')
+    argp.add_argument('train_files', nargs='+', help='files with training data, .conllu extension')
+    argp.add_argument('valid_files', nargs='+', help='files with validation data, .conllu extension')
+    argp.add_argument('test_files', nargs='+', help='files with testing data, .conllu extension')
+    argp.add_argument('--train_sentences_pickle', help='file for (or containing) preloaded CoNLL-U training data, .pickle extension')
+    argp.add_argument('--valid_sentences_pickle', help='file for (or containing) preloaded CoNLL-U validation data, .pickle extension')
+    argp.add_argument('--test_sentences_pickle', help='file for (or containing) preloaded CoNLL-U testing data, .pickle extension')
+    # argp.add_argument('--conllu_files', nargs='+')
     argp.add_argument('--embeddings_file', help='file with fastText embeddings, .bin extension')
 
     args = argp.parse_args()
     config['phase'] = args.phase
     config['train_files'] = args.train_files
-    config['sentences_pickle'] = args.sentences_pickle
-    config['conllu_files'] = args.conllu_files
+    config['valid_files'] = args.valid_files
+    config['test_files'] = args.test_files
+    config['train_sentences_pickle'] = args.train_sentences_pickle
+    config['valid_sentences_pickle'] = args.valid_sentences_pickle
+    config['test_sentences_pickle'] = args.test_sentences_pickle
+    # config['conllu_files'] = args.conllu_files
     config['embeddings_file'] = args.embeddings_file
