@@ -35,6 +35,7 @@ config['PAD'] = "$PAD$" # padding
 
 
 config['dictionary_file'] = r".\data\dictionaries.pickle" # file where all the dictionaries will be stored
+config['embeddings_file'] = r".\data\cc.ru.300.bin" # file with fastText embeddings, .bin extension
 
 def configurate():
     """
@@ -58,8 +59,6 @@ def parse_arguments():
     argp.add_argument('--train_sentences_pickle', help='file for (or containing) preloaded CoNLL-U training data, .pickle extension')
     argp.add_argument('--valid_sentences_pickle', help='file for (or containing) preloaded CoNLL-U validation data, .pickle extension')
     argp.add_argument('--test_sentences_pickle', help='file for (or containing) preloaded CoNLL-U testing data, .pickle extension')
-    # argp.add_argument('--conllu_files', nargs='+')
-    argp.add_argument('--embeddings_file', help='file with fastText embeddings, .bin extension')
 
     args = argp.parse_args()
     config['phase'] = args.phase
@@ -69,5 +68,3 @@ def parse_arguments():
     config['train_sentences_pickle'] = args.train_sentences_pickle
     config['valid_sentences_pickle'] = args.valid_sentences_pickle
     config['test_sentences_pickle'] = args.test_sentences_pickle
-    # config['conllu_files'] = args.conllu_files
-    config['embeddings_file'] = args.embeddings_file

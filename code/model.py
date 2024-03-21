@@ -8,7 +8,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 
-import dataset
+from vocab import Vocab
+from dataset import CustomDataset
 from encoder import Encoder
 from decoder import Decoder
 from config import configurate
@@ -17,9 +18,12 @@ from config import config
 
 def main(conf):
     # print(conf)
-    model = Model(conf).to(conf['device'])
+    vocabulary = Vocab(conf)
+    train_data = CustomDataset(conf, vocabulary, conf['train_files'],
+                               sentences_pickle=conf['train_sentences_pickle'], training_set=True)
+    model = Model(conf, train_data).to(conf['device'])
     trainer = Trainer(conf, model, subset_size=0).to(conf['device'])
-    trainer.train()
+    trainer.train_epoch()
     # loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
     # progress_bar = tqdm(enumerate(loader), disable=True)
     # for _, (words_batch, chars_batch, labels_batch) in progress_bar:
@@ -35,18 +39,14 @@ class Model(nn.Module):
     ----------
     conf : dict
         Dictionary with configuration parameters
-    Examples
-    --------
-        model = Model(conf) \n
-        loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch) \n
-        for (words_batch, chars_batch, labels_batch) in loader:
-            logits, loss = model(words_batch, chars_batch, labels_batch)
+    data : CustomDataset
+        Instance of class containing dataset
     """
 
-    def __init__(self, conf):
+    def __init__(self, conf, data):
         super().__init__()
         self.conf = conf
-        self.data = dataset.CustomDataset(self.conf)
+        self.data = data
         self.encoder = Encoder(self.conf, self.data) # provides words embeddings
         self.decoder = Decoder(self.conf, self.data)
         self.grammeme_embeddings = None

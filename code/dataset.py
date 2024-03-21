@@ -17,9 +17,9 @@ from config import config
 
 
 def main(conf):
-    print(conf)
-
-    dataset = CustomDataset(conf)
+    # print(conf)
+    vocabulary = Vocab(conf)
+    dataset = CustomDataset(conf, vocabulary, conf['train_files'], sentences_pickle="example_set.pickle")
 
     print(f"length of word-index dict: {len(dataset.vocab.vocab['word-index'])}")
     print(f"length of grammeme-index dict: {len(dataset.vocab.vocab['grammeme-index'])}")
@@ -39,24 +39,34 @@ class CustomDataset(Dataset):
     ----------
     conf : dict
         Dictionary with configuration parameters
+    vocab : Vocab
+        Instance of class containing vocabulary
+    files : list
+        List containing .conllu files. This parameter is used only if there is no .pickle file containing sentences
+    sentences_pickle : str, default None
+        Path to the .pickle file with sentences. If the file does not exist, class creates it. If None, does not save sentences in a file
+    training_set : bool, default True
+        Flag to show whether this is a training dataset. Creation of the embeddings depends on this
     Examples
     --------
-        dataset = CustomDataset(conf) \n
+        dataset = CustomDataset(conf, vocabulary, conf['train_files'], sentences_pickle="example_set.pickle") \n
         print(dataset.vocab.vocab["index-word"][dataset[66][0][8][0]])
+
+
     """
     
-    def __init__(self, conf):
+    def __init__(self, conf, vocab, files, sentences_pickle=None, training_set=True):
         self.conf = conf
-        self.vocab = Vocab(self.conf)
-        self.train_sentences_pyconll = None
-        self.valid_sentences_pyconll = None
-        self.test_sentences_pyconll = None
-        self.train_sentences = []
-        self.valid_sentences = []
-        self.test_sentences = []
+        self.vocab = vocab
+        self.files = files
+        self.sentences_pickle = sentences_pickle
+        self.training_set = training_set
+        self.sentences_pyconll = None
+        self.sentences = []
         self.get_all_sentences()
-        self.embeddings = []
-        self.get_all_embeddings(self.conf["embeddings_file"], dimension=self.conf['word_embeddings_dimension'])
+        if training_set:
+            self.embeddings = []
+            self.get_all_embeddings(self.conf["embeddings_file"], dimension=self.conf['word_embeddings_dimension'])
 
     def __len__(self):
         """
@@ -84,83 +94,42 @@ class CustomDataset(Dataset):
                 grammeme_ids = [self.vocab.vocab["grammeme-index"]["POS=" + word.upos]]
             grammeme_ids += [self.vocab.vocab["grammeme-index"][key + "=" + feat] for key in word.feats for feat in word.feats[key]]
             labels += [grammeme_ids]
+
         return words, labels
 
     def get_all_sentences(self):
         """
-        Loads train, valid, test sentences from their .pickle files, if they exists.
-        Otherwise, loads them from .conllu files and stores in .pickle files, if they are given as arguments.
-        Also, stores the sentences as 3 lists of lists of words (strings)
+        Loads sentences from their .pickle file, if it exists.
+        Otherwise, loads them from .conllu files and stores in .pickle file, if it is given as arguments.
+        Also, stores the sentences as list of lists of words (strings)
         """
 
-        ### train sentences ###
-        print("Loading train sentences")
-        if (os.path.exists(self.conf["train_sentences_pickle"])): # check if .pickle file exists
-            with open(self.conf["train_sentences_pickle"], 'rb') as f:
-                self.train_sentences_pyconll = pickle.load(f)
+        print("Loading sentences for dataset")
+        if self.sentences_pickle is not None:
+            if (os.path.exists(self.sentences_pickle)): # check if .pickle file exists
+                with open(self.sentences_pickle, 'rb') as f:
+                    self.sentences_pyconll = pickle.load(f)
+            else:
+                print(f"{self.sentences_pickle} does not exist")
+                self.sentences_pyconll = pyconll.load.load_from_file(self.files[0])
+                for file in self.files[1:]:
+                    self.sentences_pyconll = self.sentences_pyconll + self.load.load_from_file(file)
+
+                with open(self.sentences_pickle, 'wb') as f:
+                    pickle.dump(self.sentences_pyconll, f)
+                    print(f"Saved sentences to {self.sentences_pickle}")
         else:
-            print("There is no .pickle file containing train sentences")
-            files = self.conf["train_files"]
-            self.train_sentences_pyconll = pyconll.load.load_from_file(files[0])
+            print(".pickle file was not provided")
+            self.sentences_pyconll = pyconll.load.load_from_file(self.files[0])
             for file in self.files[1:]:
-                self.train_sentences_pyconll = self.train_sentences_pyconll + self.load.load_from_file(file)
+                self.sentences_pyconll = self.sentences_pyconll + self.load.load_from_file(file)
 
-            if (os.path.exists(self.conf["train_sentences_pickle"])):
-                with open(self.conf["train_sentences_pickle"], 'wb') as f:
-                    pickle.dump(self.train_sentences_pyconll, f)
-                    print("Saved train sentences")
-
-        for sentence in self.train_sentences_pyconll:
+        for sentence in self.sentences_pyconll:
             words = []
             for word in sentence:
                 words += [word.form]
-            self.train_sentences += [words]
+            self.sentences += [words]
 
-        ### valid sentences ###
-        print("Loading valid sentences")
-        if (os.path.exists(self.conf["valid_sentences_pickle"])):  # check if .pickle file exists
-            with open(self.conf["valid_sentences_pickle"], 'rb') as f:
-                self.valid_sentences_pyconll = pickle.load(f)
-        else:
-            print("There is no .pickle file containing validation sentences")
-            files = self.conf["valid_files"]
-            self.valid_sentences_pyconll = pyconll.load.load_from_file(files[0])
-            for file in self.files[1:]:
-                self.valid_sentences_pyconll = self.valid_sentences_pyconll + self.load.load_from_file(file)
-
-            if (os.path.exists(self.conf["valid_sentences_pickle"])):
-                with open(self.conf["valid_sentences_pickle"], 'wb') as f:
-                    pickle.dump(self.valid_sentences_pyconll, f)
-                    print("Saved validation sentences")
-
-        for sentence in self.valid_sentences_pyconll:
-            words = []
-            for word in sentence:
-                words += [word.form]
-            self.valid_sentences += [words]
-
-        ### test sentences ###
-        print("Loading test sentences")
-        if (os.path.exists(self.conf["test_sentences_pickle"])):  # check if .pickle file exists
-            with open(self.conf["test_sentences_pickle"], 'rb') as f:
-                self.test_sentences_pyconll = pickle.load(f)
-        else:
-            print("There is no .pickle file containing test sentences")
-            files = self.conf["test_files"]
-            self.test_sentences_pyconll = pyconll.load.load_from_file(files[0])
-            for file in self.files[1:]:
-                self.test_sentences_pyconll = self.test_sentences_pyconll + self.load.load_from_file(file)
-
-            if (os.path.exists(self.conf["test_sentences_pickle"])):
-                with open(self.conf["test_sentences_pickle"], 'wb') as f:
-                    pickle.dump(self.test_sentences_pyconll, f)
-                    print("Saved test sentences")
-
-        for sentence in self.test_sentences_pyconll:
-            words = []
-            for word in sentence:
-                words += [word.form]
-            self.test_sentences += [words]
 
     def get_all_embeddings(self, file, dimension=300):
         """
@@ -182,6 +151,7 @@ class CustomDataset(Dataset):
 
         ft = fasttext.load_model(file)
 
+        # the author of the original code has this scale
         self.embeddings = np.random.normal(scale=2.0 / (dimension + len(self.vocab.vocab['word-index'])),
                                            size=(len(self.vocab.vocab['word-index']), dimension))
 
@@ -194,5 +164,6 @@ class CustomDataset(Dataset):
 
 
 if __name__ == "__main__":
+    # python code/dataset.py train ./data/ru_syntagrus-ud-train.conllu ./data/ru_syntagrus-ud-dev.conllu ./data/ru_syntagrus-ud-test.conllu
     configurate()
     main(config)
