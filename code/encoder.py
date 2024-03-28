@@ -35,7 +35,6 @@ class Encoder(nn.Module):
                                         hidden_size=self.conf['word_LSTM_hidden'])
         self.wordDropout = nn.Dropout(p=self.conf['word_LSTM_input_dropout'])
 
-    # still have to figure out dropout
     def forward(self, words_batch, chars_batch):
         """
         Takes batches of indices of words and chars and creates embeddings with LSTM.
@@ -54,13 +53,14 @@ class Encoder(nn.Module):
             The shape of each tensor is (max_sentence_length, batch_size, grammeme_LSTM_hidden)
         """
 
+        current_batch_size = words_batch.shape[1]
         words = self.word_embeddings(words_batch)
         chars = self.char_embeddings(chars_batch)
         # words has shape (max_sentence_length, batch_size, word_embeddings_dimension)
         # chars has shape (batch_size * max_sentence_length, max_word_length, char_embeddings_dimension)
         _, (hn, cn) = self.charLSTM(chars)
         # hn has shape (char_LSTM_directions, batch_size * max_sentence_length, char_LSTM_hidden)
-        chars = hn.permute(1, 0, 2).contiguous().view(self.conf['sentence_batch_size'], -1, hn.shape[2] * self.conf['char_LSTM_directions']).permute(1, 0, 2)
+        chars = hn.permute(1, 0, 2).contiguous().view(current_batch_size, -1, hn.shape[2] * self.conf['char_LSTM_directions']).permute(1, 0, 2)
         # we have to transpose twice because of how .view() changes shapes of tensors. Thoughtless usage can lead to serious mistakes!
         # chars has shape (max_sentence_length, batch_size, char_LSTM_directions * char_LSTM_hidden)
         words = torch.concat((words, chars), dim=2)
@@ -72,7 +72,6 @@ class Encoder(nn.Module):
         hidden_forward = []
         cell_forward = []
         for word in words:
-            # TODO: somehow implement input, state, and output dropout
             hk, ck = self.wordLSTMcell(word, (hk, ck))
             hidden_forward += [hk]
             cell_forward += [ck]

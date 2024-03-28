@@ -155,7 +155,7 @@ class Vocab:
         for words in wordforms:
             chars.update(words)
         chars = list(chars)
-        chars = [self.PAD] + chars
+        chars = [self.PAD] + [self.UNK] + chars
         return self.get_dictionaries(chars)
                 
     def get_all_singletons(self, sentences):

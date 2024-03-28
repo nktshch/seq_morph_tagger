@@ -83,9 +83,9 @@ class CustomDataset(Dataset):
         words = []
         labels = []
         for word in self.sentences[index]:
-            word_ids = [self.vocab.vocab["word-index"][word]]
+            word_ids = [self.vocab.vocab["word-index"].get(word, 1)]
             for char in word:
-                word_ids += [self.vocab.vocab["char-index"][char]]
+                word_ids += [self.vocab.vocab["char-index"].get(char, 1)]
             words += [word_ids]
 
         for word in self.sentences_pyconll[index]:

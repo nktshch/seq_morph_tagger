@@ -47,11 +47,11 @@ class Decoder(nn.Module):
         Returns
         -------
         tuple
-            Tuple consists of predicted grammemes and probabilities. The first tensor has shape (batch_size * max_sentence_length, max_grammeme_length).
+            Tuple consists of predicted grammemes and probabilities. The first tensor has shape (max_grammeme_length, batch_size * max_sentence_length).
             The second tensor has shape (max_grammeme_length, batch_size * max_sentence_length, grammemes_in_vocab)
         """
         # during training, these will be fed one at a time, instead of outputs at each time step
-        labels = self.grammeme_embeddings(labels_batch) # embeddings of grammemes,
+        labels = self.grammeme_embeddings(labels_batch[:-1]) # embeddings of grammemes,
         # size (max_grammeme_length, batch_size * max_sentence_length, grammeme_embeddings_dimension)
         # size[0] = loop length (sequence length), size[1] = size of the batch, size[3] = input size
         labels = self.grammemeDropout(labels)
@@ -69,6 +69,7 @@ class Decoder(nn.Module):
 
         else: # using generated grammemes as the next input
             grammemes = labels[0]
+            print("works")
             for _ in range(self.conf['decoder_max_iterations']):
                 hk, ck = self.grammemeLSTMcell(grammemes, (hk, ck))
                 probabilities_batch = self.linear(hk)
@@ -77,8 +78,8 @@ class Decoder(nn.Module):
                 grammemes = self.grammeme_embeddings(predictions_batch)
                 predictions += [predictions_batch]
 
+        predictions = torch.stack(predictions)
         probabilities = torch.stack(probabilities)
-        predictions = torch.stack(predictions).permute(1, 0)
-        # predictions has shape (batch_size * max_sentence_length, max_grammeme_length)
+        # predictions has shape (max_grammeme_length, batch_size * max_sentence_length)
         # probabilities has shape (max_grammeme_length, batch_size * max_sentence_length, grammemes_in_vocab)
         return predictions, probabilities

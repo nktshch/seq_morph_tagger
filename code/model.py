@@ -21,11 +21,13 @@ def main(conf):
     vocabulary = Vocab(conf)
     train_data = CustomDataset(conf, vocabulary, conf['train_files'],
                                sentences_pickle=conf['train_sentences_pickle'], training_set=True)
+    valid_data = CustomDataset(conf, vocabulary, conf['valid_files'],
+                               sentences_pickle=conf['valid_sentences_pickle'], training_set=False)
     model = Model(conf, train_data).to(conf['device'])
-    trainer = Trainer(conf, model, subset_size=0).to(conf['device'])
-    trainer.train_epoch()
-    # loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
-    # progress_bar = tqdm(enumerate(loader), disable=True)
+    trainer = Trainer(conf, model, valid_data, subset_size=100).to(conf['device'])
+    trainer.epoch_loops()
+    # train_loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
+    # progress_bar = tqdm(enumerate(train_loader), disable=True)
     # for _, (words_batch, chars_batch, labels_batch) in progress_bar:
     #     tags = model(words_batch, chars_batch, labels_batch)
 
@@ -73,9 +75,8 @@ class Model(nn.Module):
         decoder_hidden = encoder_hidden.view(-1, encoder_hidden.size(dim=2))
         decoder_cell = encoder_cell.view(-1, encoder_cell.size(dim=2))
         predictions, probabilities = self.decoder(labels_batch, decoder_hidden, decoder_cell)
-        tags = self.predictions_to_grammemes(predictions)
 
-        return tags, probabilities
+        return predictions, probabilities
 
     def predictions_to_grammemes(self, predictions):
         """
@@ -100,7 +101,7 @@ class Model(nn.Module):
 
 
 class Trainer(nn.Module):
-    def __init__(self, conf, model, subset_size=0):
+    def __init__(self, conf, model, valid_data, subset_size=0):
         """
         Class performs training. More info will be added later
 
@@ -110,6 +111,8 @@ class Trainer(nn.Module):
             Dictionary with configuration parameters
         model : Model
             Instance of class containing model parameters
+        valid_data : CustomDataset
+            Dataset for validation
         subset_size : float of int
             Whether to use full dataset from model.data, or only some part of it. If int, treated as the number
             of samples from model.data. If float, should be between 0 and 1, treated as the proportion of the dataset used
@@ -120,14 +123,18 @@ class Trainer(nn.Module):
         self.model = model
 
         if subset_size == 0:
-            subset = self.model.data
+            train_subset = self.model.data
+            valid_subset = valid_data
         elif isinstance(subset_size, int) and subset_size > 0:
-            subset = subset_from_dataset(self.model.data, subset_size)
+            train_subset = subset_from_dataset(self.model.data, subset_size)
+            valid_subset = subset_from_dataset(valid_data, subset_size)
         elif isinstance(subset_size, float) and 0.0 < subset_size < 1.0:
-            subset = subset_from_dataset(self.model.data, int(subset_size * len(self.model.data)))
+            train_subset = subset_from_dataset(self.model.data, int(subset_size * len(self.model.data)))
+            valid_subset = subset_from_dataset(valid_data, int(subset_size * len(valid_data)))
         else:
             raise TypeError("Only positive ints and floats between 0 and 1 are allowed")
-        self.loader = DataLoader(subset, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
+        self.train_loader = DataLoader(train_subset, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
+        self.valid_loader = DataLoader(valid_subset, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
 
         self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.conf['learning_rate'])
@@ -135,9 +142,10 @@ class Trainer(nn.Module):
         self.current_epoch = 0
 
     def epoch_loops(self):
-        print(f"{len(self.loader)} batches")
-        for epoch in range(self.conf['max_epochs']):
-            self.train_loop()
+        print(f"{len(self.train_loader)} batches")
+        # for epoch in range(self.conf['max_epochs']):
+        for epoch in range(2):
+            self.train_epoch()
             metrics, error = self.evaluate()
             self.current_epoch += 1
 
@@ -145,7 +153,7 @@ class Trainer(nn.Module):
     def train_epoch(self):
         self.model.encoder.train()
         self.model.decoder.train()
-        progress_bar = enumerate(self.loader)
+        progress_bar = enumerate(self.train_loader)
         running_loss = 0.0
         print_every = 20
         current_epoch_tags = [] # stores tags for this epoch
@@ -154,20 +162,19 @@ class Trainer(nn.Module):
             self.optimizer.zero_grad()
             _, probabilities = self.model(words_batch, chars_batch, labels_batch)
 
-            probabilities = probabilities[:-1] # slice is taken to ignore the last prediction which is generated from EOS token.
             targets = labels_batch[1:].to(torch.long) # slice is taken to ignore SOS token
-
+            print(targets.shape, probabilities.shape)
             loss = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             loss.backward()
             self.optimizer.step()
 
             running_loss += loss.item()
 
-            if (self.current_epoch * len(self.loader) + iteration) % print_every == 0:
-                self.writer.add_scalar("training loss", running_loss / print_every, self.current_epoch * len(self.loader) + iteration)
+            if (self.current_epoch * len(self.train_loader) + iteration) % print_every == 0:
+                self.writer.add_scalar("training loss", running_loss / print_every, self.current_epoch * len(self.train_loader) + iteration)
                 running_loss = 0.0
 
-        print("One epoch complete")
+        print("One train epoch complete")
 
 
     def evaluate(self):
@@ -177,12 +184,15 @@ class Trainer(nn.Module):
         error = 0
 
         # code similar to train_epoch
-        progress_bar = enumerate(self.loader) # ?
+        progress_bar = enumerate(self.valid_loader)
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
             tags, _ = self.model(words_batch, chars_batch, labels_batch)
 
+            targets = labels_batch[1:].to(torch.long)
+            print(targets.shape, tags.shape)
             # calculate error and metrics
 
+        print("One valid epoch complete")
         return metrics, error
 
 
