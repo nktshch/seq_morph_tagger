@@ -33,7 +33,9 @@ class Encoder(nn.Module):
                                 hidden_size=self.conf['char_LSTM_hidden'], bidirectional=self.conf['char_LSTM_bidirectional'], batch_first=True)
         self.wordLSTMcell = nn.LSTMCell(input_size=(self.conf['word_embeddings_dimension'] + self.conf['char_LSTM_hidden'] * self.conf['char_LSTM_directions']),
                                         hidden_size=self.conf['word_LSTM_hidden'])
-        self.wordDropout = nn.Dropout(p=self.conf['word_LSTM_input_dropout'])
+        self.wordDropout_input = nn.Dropout(p=self.conf['word_LSTM_input_dropout'])
+        self.wordDropout_state = nn.Dropout(p=self.conf['word_LSTM_state_dropout'])
+        self.wordDropout_output = nn.Dropout(p=self.conf['word_LSTM_output_dropout'])
 
     def forward(self, words_batch, chars_batch):
         """
@@ -64,38 +66,45 @@ class Encoder(nn.Module):
         # we have to transpose twice because of how .view() changes shapes of tensors. Thoughtless usage can lead to serious mistakes!
         # chars has shape (max_sentence_length, batch_size, char_LSTM_directions * char_LSTM_hidden)
         words = torch.concat((words, chars), dim=2)
-        words = self.wordDropout(words)
+        words = self.wordDropout_input(words)
         # words has shape (max_sentence_length, batch_size, word_embeddings_dimension + char_LSTM_directions * char_LSTM_hidden)
 
-        hk = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).to(self.conf['device'])
-        ck = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).to(self.conf['device'])
-        hidden_forward = []
-        cell_forward = []
-        for word in words:
-            hk, ck = self.wordLSTMcell(word, (hk, ck))
-            hidden_forward += [hk]
-            cell_forward += [ck]
-        hidden_forward = torch.stack(hidden_forward)
-        cell_forward = torch.stack(cell_forward)
+        hidden_forward, cell_forward = self.loop(words)
 
         if self.conf['word_LSTM_bidirectional']:
-            hk = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).to(self.conf['device'])
-            ck = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).to(self.conf['device'])
-            hidden_backward = []
-            cell_backward = []
-            for word in words.flip(dims=[0]):
-                hk, ck = self.wordLSTMcell(word, (hk, ck))
-                hidden_backward += [hk]
-                cell_backward += [ck]
-            hidden_backward = torch.stack(hidden_backward).flip(dims=[0])
-            cell_backward = torch.stack(cell_backward).flip(dims=[0])
+            hidden_backward, cell_backward = self.loop(words.flip(dims=[0]))
+
+            hidden_backward = hidden_backward.flip(dims=[0])
+            cell_backward = cell_backward.flip(dims=[0])
 
             hidden = torch.concat((hidden_forward, hidden_backward), dim=2)
             cell = torch.concat((cell_forward, cell_backward), dim=2)
             # final shape is (max_sentence_length, batch_size, grammeme_LSTM_hidden)
+
+            hidden = self.wordDropout_output(hidden)
+            cell = self.wordDropout_output(cell)
             return hidden, cell
 
         hidden = hidden_forward
         cell = cell_forward
         # final shape is (max_sentence_length, batch_size, grammeme_LSTM_hidden)
+
+        hidden = self.wordDropout_output(hidden)
+        cell = self.wordDropout_output(cell)
+        return hidden, cell
+
+    def loop(self, words):
+        hk = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).to(self.conf['device'])
+        ck = torch.zeros((words.size(dim=1), self.wordLSTMcell.hidden_size)).to(self.conf['device'])
+        hidden = []
+        cell = []
+        for word in words:
+            hk = self.wordDropout_state(hk)
+            ck = self.wordDropout_state(ck)
+            hk, ck = self.wordLSTMcell(word, (hk, ck))
+            hidden += [hk]
+            cell += [ck]
+        hidden = torch.stack(hidden)
+        cell = torch.stack(cell)
+
         return hidden, cell

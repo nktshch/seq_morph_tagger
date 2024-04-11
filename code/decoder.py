@@ -69,8 +69,7 @@ class Decoder(nn.Module):
 
         else: # using generated grammemes as the next input
             grammemes = labels[0]
-            print("works")
-            for _ in range(self.conf['decoder_max_iterations']):
+            for _ in range(len(labels)):
                 hk, ck = self.grammemeLSTMcell(grammemes, (hk, ck))
                 probabilities_batch = self.linear(hk)
                 probabilities += [probabilities_batch]

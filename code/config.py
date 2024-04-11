@@ -18,6 +18,8 @@ config['word_LSTM_hidden'] = 400
 config['char_LSTM_hidden'] = 150
 
 config['word_LSTM_input_dropout'] = 0.5
+config['word_LSTM_state_dropout'] = 0.3
+config['word_LSTM_output_dropout'] = 0.5
 config['grammeme_LSTM_input_dropout'] = 0.5
 
 config['learning_rate'] = 1.0

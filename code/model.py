@@ -138,15 +138,21 @@ class Trainer(nn.Module):
 
         self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.conf['learning_rate'])
-        self.writer = SummaryWriter()
+        self.writer_train = SummaryWriter()
+        self.writer_valid = SummaryWriter()
         self.current_epoch = 0
+
+        self.n_correct = 0
+        self.n_total = 0
+        self.n_padded = 0 # for debugging purposes
 
     def epoch_loops(self):
         print(f"{len(self.train_loader)} batches")
         # for epoch in range(self.conf['max_epochs']):
         for epoch in range(2):
             self.train_epoch()
-            metrics, error = self.evaluate()
+            metrics = self.valid_epoch()
+            print(f"metrics at epoch {self.current_epoch}: {metrics}")
             self.current_epoch += 1
 
 
@@ -161,9 +167,8 @@ class Trainer(nn.Module):
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
             self.optimizer.zero_grad()
             _, probabilities = self.model(words_batch, chars_batch, labels_batch)
-
             targets = labels_batch[1:].to(torch.long) # slice is taken to ignore SOS token
-            print(targets.shape, probabilities.shape)
+
             loss = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             loss.backward()
             self.optimizer.step()
@@ -171,29 +176,49 @@ class Trainer(nn.Module):
             running_loss += loss.item()
 
             if (self.current_epoch * len(self.train_loader) + iteration) % print_every == 0:
-                self.writer.add_scalar("training loss", running_loss / print_every, self.current_epoch * len(self.train_loader) + iteration)
+                self.writer_train.add_scalar("training loss", running_loss / print_every, self.current_epoch * len(self.train_loader) + iteration)
                 running_loss = 0.0
 
         print("One train epoch complete")
 
 
-    def evaluate(self):
+    def valid_epoch(self):
         self.model.encoder.eval()
         self.model.decoder.eval()
         metrics = 0
-        error = 0
 
         # code similar to train_epoch
         progress_bar = enumerate(self.valid_loader)
+        running_error = 0.0
+        print_every = 20
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
-            tags, _ = self.model(words_batch, chars_batch, labels_batch)
+            tags, probabilities = self.model(words_batch, chars_batch, labels_batch)
+            targets = labels_batch[1:].to(torch.long) # slice is taken to ignore SOS token
 
-            targets = labels_batch[1:].to(torch.long)
-            print(targets.shape, tags.shape)
-            # calculate error and metrics
+            error = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            running_error += error.item()
+
+            if (self.current_epoch * len(self.valid_loader) + iteration) % print_every == 0:
+                self.writer_valid.add_scalar("valid loss", running_error / print_every, self.current_epoch * len(self.valid_loader) + iteration)
+                running_error = 0.0
+
+            # calculate metrics
+
+            for tag, target in zip(tags.permute(1, 0), targets.permute(1, 0)):
+                if target[0] == 0:
+                    self.n_padded += 1
+                else:
+                    self.n_total += 1
+                    self.n_correct += int(torch.equal(tag, target))
+
+        print(self.n_total, self.n_padded)
+        metrics = self.n_correct / self.n_total
+        self.n_correct = 0
+        self.n_total = 0
+
 
         print("One valid epoch complete")
-        return metrics, error
+        return metrics
 
 
 def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing here
