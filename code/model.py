@@ -23,8 +23,10 @@ def main(conf):
                                sentences_pickle=conf['train_sentences_pickle'], training_set=True)
     valid_data = CustomDataset(conf, vocabulary, conf['valid_files'],
                                sentences_pickle=conf['valid_sentences_pickle'], training_set=False)
+    test_data = CustomDataset(conf, vocabulary, conf['test_files'],
+                              sentences_pickle=conf['test_sentences_pickle'], training_set=False)
     model = Model(conf, train_data).to(conf['device'])
-    trainer = Trainer(conf, model, valid_data, subset_size=100).to(conf['device'])
+    trainer = Trainer(conf, model, valid_data, test_data, subset_size=0).to(conf['device'])
     trainer.epoch_loops()
     # train_loader = torch.utils.data.DataLoader(model.data, batch_size=conf['sentence_batch_size'], collate_fn=collate_batch)
     # progress_bar = tqdm(enumerate(train_loader), disable=True)
@@ -53,6 +55,11 @@ class Model(nn.Module):
         self.decoder = Decoder(self.conf, self.data)
         self.grammeme_embeddings = None
 
+        self.n_total = 0
+        self.n_correct = 0
+        self.valid_metrics = 0
+        self.test_metrics = 0
+
     def forward(self, words_batch, chars_batch, labels_batch):
         """
         Uses Encoder and Decoder to perform one pass on a sinle batch.
@@ -78,6 +85,20 @@ class Model(nn.Module):
 
         return predictions, probabilities
 
+    def calculate_metrics(self, predictions, targets, is_test=False):
+        masked_predictions = masked_select(predictions.permute(1, 0),
+                                           self.data.vocab.vocab["grammeme-index"][self.conf['EOS']])
+
+        for tag, target in zip(masked_predictions, targets.permute(1, 0)):
+            if target[0] != 0:
+                self.n_total += 1
+                self.n_correct += int(torch.equal(tag, target))
+
+        if is_test:
+            self.test_metrics = self.n_correct / self.n_total
+        else:
+            self.valid_metrics = self.n_correct / self.n_total
+
     def predictions_to_grammemes(self, predictions):
         """
         Turns indices of predictions produced by decoder into actual grammemes (strings)
@@ -101,7 +122,7 @@ class Model(nn.Module):
 
 
 class Trainer(nn.Module):
-    def __init__(self, conf, model, valid_data, subset_size=0):
+    def __init__(self, conf, model, valid_data, test_data, subset_size=0):
         """
         Class performs training. More info will be added later
 
@@ -113,6 +134,8 @@ class Trainer(nn.Module):
             Instance of class containing model parameters
         valid_data : CustomDataset
             Dataset for validation
+        test_data : CustomDataset
+            Dataset for testing
         subset_size : float of int
             Whether to use full dataset from model.data, or only some part of it. If int, treated as the number
             of samples from model.data. If float, should be between 0 and 1, treated as the proportion of the dataset used
@@ -125,100 +148,123 @@ class Trainer(nn.Module):
         if subset_size == 0:
             train_subset = self.model.data
             valid_subset = valid_data
+            test_subset = test_data
         elif isinstance(subset_size, int) and subset_size > 0:
             train_subset = subset_from_dataset(self.model.data, subset_size)
             valid_subset = subset_from_dataset(valid_data, subset_size)
+            test_subset = subset_from_dataset(test_data, subset_size)
         elif isinstance(subset_size, float) and 0.0 < subset_size < 1.0:
             train_subset = subset_from_dataset(self.model.data, int(subset_size * len(self.model.data)))
             valid_subset = subset_from_dataset(valid_data, int(subset_size * len(valid_data)))
+            test_subset = subset_from_dataset(test_data, int(subset_size * len(test_data)))
         else:
             raise TypeError("Only positive ints and floats between 0 and 1 are allowed")
         self.train_loader = DataLoader(train_subset, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
         self.valid_loader = DataLoader(valid_subset, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
+        self.test_loader = DataLoader(test_subset, batch_size=self.conf['sentence_batch_size'], collate_fn=collate_batch)
 
         self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.conf['learning_rate'])
-        self.writer_train = SummaryWriter()
-        self.writer_valid = SummaryWriter()
+        self.writer = SummaryWriter()
         self.current_epoch = 0
-
-        self.n_correct = 0
-        self.n_total = 0
-        self.n_padded = 0 # for debugging purposes
+        self.print_every = 20 # write to log every so many iteration
+        self.best_metrics = 0
+        self.no_improv = 0
 
     def epoch_loops(self):
-        print(f"{len(self.train_loader)} batches")
-        # for epoch in range(self.conf['max_epochs']):
-        for epoch in range(2):
-            self.train_epoch()
-            metrics = self.valid_epoch()
-            print(f"metrics at epoch {self.current_epoch}: {metrics}")
-            self.current_epoch += 1
+        print(f"{len(self.train_loader)} batches in train")
+        print(f"{len(self.valid_loader)} batches in valid")
+        print(f"{len(self.test_loader)} batches in test")
 
+        for epoch in range(5):
+            self.train_epoch()
+
+            self.valid_epoch()
+            print(f"valid metrics at epoch {self.current_epoch}: {self.model.valid_metrics}")
+            if self.model.valid_metrics < self.best_metrics:
+                self.no_improv += 1
+                if self.no_improv >= self.conf['no_improv']:
+                    print(f"No improvement for {self.conf['no_improv']} epochs, stopping early")
+            else:
+                self.no_improv = 0
+                torch.save(self.model, r".\models\model.pt")
+
+            self.test_epoch()
+            print(f"test metrics at epoch {self.current_epoch}: {self.model.test_metrics}")
+            self.writer.add_scalar("test metrics", self.model.test_metrics, self.current_epoch)
+
+            self.current_epoch += 1
 
     def train_epoch(self):
         self.model.encoder.train()
         self.model.decoder.train()
         progress_bar = enumerate(self.train_loader)
         running_loss = 0.0
-        print_every = 20
-        current_epoch_tags = [] # stores tags for this epoch
+        # current_epoch_tags = [] # stores tags for this epoch
 
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
             self.optimizer.zero_grad()
             _, probabilities = self.model(words_batch, chars_batch, labels_batch)
-            targets = labels_batch[1:].to(torch.long) # slice is taken to ignore SOS token
+            targets = labels_batch[1:] # slice is taken to ignore SOS token
 
             loss = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             loss.backward()
             self.optimizer.step()
-
             running_loss += loss.item()
 
-            if (self.current_epoch * len(self.train_loader) + iteration) % print_every == 0:
-                self.writer_train.add_scalar("training loss", running_loss / print_every, self.current_epoch * len(self.train_loader) + iteration)
+            if (self.current_epoch * len(self.train_loader) + iteration) % self.print_every == 0:
+                self.writer.add_scalar("training loss", running_loss / self.print_every, self.current_epoch * len(self.train_loader) + iteration)
                 running_loss = 0.0
 
-        print("One train epoch complete")
-
+        # print("One train epoch complete")
 
     def valid_epoch(self):
         self.model.encoder.eval()
         self.model.decoder.eval()
-        metrics = 0
 
         # code similar to train_epoch
         progress_bar = enumerate(self.valid_loader)
         running_error = 0.0
-        print_every = 20
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
-            tags, probabilities = self.model(words_batch, chars_batch, labels_batch)
-            targets = labels_batch[1:].to(torch.long) # slice is taken to ignore SOS token
+            predictions, probabilities = self.model(words_batch, chars_batch, labels_batch)
+            targets = labels_batch[1:] # slice is taken to ignore SOS token
 
             error = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             running_error += error.item()
 
-            if (self.current_epoch * len(self.valid_loader) + iteration) % print_every == 0:
-                self.writer_valid.add_scalar("valid loss", running_error / print_every, self.current_epoch * len(self.valid_loader) + iteration)
+            if (self.current_epoch * len(self.valid_loader) + iteration) % self.print_every == 0:
+                self.writer.add_scalar("valid loss", running_error / self.print_every, self.current_epoch * len(self.valid_loader) + iteration)
                 running_error = 0.0
 
-            # calculate metrics
+            self.model.calculate_metrics(predictions, targets, is_test=False)  # metrics is stored in model
 
-            for tag, target in zip(tags.permute(1, 0), targets.permute(1, 0)):
-                if target[0] == 0:
-                    self.n_padded += 1
-                else:
-                    self.n_total += 1
-                    self.n_correct += int(torch.equal(tag, target))
+        self.model.n_total = 0
+        self.model.n_correct = 0
+        # print("One valid epoch complete")
 
-        print(self.n_total, self.n_padded)
-        metrics = self.n_correct / self.n_total
-        self.n_correct = 0
-        self.n_total = 0
+    def test_epoch(self):
+        self.model.encoder.eval()
+        self.model.decoder.eval()
 
+        # code similar to train_epoch
+        progress_bar = enumerate(self.test_loader)
+        running_error = 0.0
+        for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
+            predictions, probabilities = self.model(words_batch, chars_batch, labels_batch)
+            targets = labels_batch[1:] # slice is taken to ignore SOS token
 
-        print("One valid epoch complete")
-        return metrics
+            error = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            running_error += error.item()
+
+            if (self.current_epoch * len(self.test_loader) + iteration) % self.print_every == 0:
+                self.writer.add_scalar("test loss", running_error / self.print_every, self.current_epoch * len(self.test_loader) + iteration)
+                running_error = 0.0
+
+            self.model.calculate_metrics(predictions, targets, is_test=True)  # metrics is stored in model
+
+        self.model.n_total = 0
+        self.model.n_correct = 0
+        # print("One test epoch complete")
 
 
 def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing here
@@ -274,11 +320,11 @@ def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2): # do all preprocessing h
         chars_batch += [chars_indices]
         labels_batch += [labels_indices]
 
-    words_batch = torch.tensor(words_batch, dtype=torch.int)
+    words_batch = torch.tensor(words_batch, dtype=torch.long)
     words_batch = words_batch.transpose(1, 0)
-    chars_batch = torch.tensor(chars_batch, dtype=torch.int)
+    chars_batch = torch.tensor(chars_batch, dtype=torch.long)
     chars_batch = chars_batch.view(-1, chars_batch.shape[2])
-    labels_batch = torch.tensor(labels_batch, dtype=torch.int)
+    labels_batch = torch.tensor(labels_batch, dtype=torch.long)
     labels_batch = labels_batch.view(-1, labels_batch.shape[2]).permute(1, 0)
     return words_batch.to(config['device']), chars_batch.to(config['device']), labels_batch.to(config['device'])
 
@@ -287,6 +333,42 @@ def subset_from_dataset(data, n):
     Outputs first n entries from data (type Dataset) as another dataset
     """
     return Subset(data, range(n))
+
+def masked_select(a, value):
+    """
+    Zero all elements that come after a given value in a row. Used for zeroing elements after EOS token
+    Parameters
+    ----------
+    a : torch.Tensor
+        Input tensor
+    value : a.dtype
+        Value after which all elements should be equal to zero (EOS token index)
+    Returns
+    -------
+    torch.Tensor
+        Masked tensor of the same shape as a
+    Examples
+    --------
+    >>> a = torch.Tensor([[1, 2, 3, 4, 99, 5, 2, 1],
+                          [1, 99, 99, 4, 3, 5, 99, 3],
+                          [1, 3, 3, 4, 1, 5, 2, 1]])
+    >>> print(masked_select(a, 99))
+    tensor([[ 1.,  2.,  3.,  4., 99.,  0.,  0.,  0.],
+            [ 1., 99.,  0.,  0.,  0.,  0.,  0.,  0.],
+            [ 1.,  3.,  3.,  4.,  1.,  5.,  2.,  1.]])
+    """
+
+    mask = []
+    rng = torch.arange(0, a.shape[1]).to(config['device'])
+    for row in a:
+        equal = torch.isin(row, value)
+        if equal.nonzero().shape[0] != 0:
+            mask.append(torch.le(rng, equal.nonzero()[0]))
+        else:
+            mask.append(rng)
+
+    mask = torch.stack(mask)
+    return a * mask
 
 
 if __name__ == "__main__":

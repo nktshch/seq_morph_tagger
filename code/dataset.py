@@ -49,8 +49,8 @@ class CustomDataset(Dataset):
         Flag to show whether this is a training dataset. Creation of the embeddings depends on this
     Examples
     --------
-        dataset = CustomDataset(conf, vocabulary, conf['train_files'], sentences_pickle="example_set.pickle") \n
-        print(dataset.vocab.vocab["index-word"][dataset[66][0][8][0]])
+        >>> dataset = CustomDataset(conf, vocabulary, conf['train_files'], sentences_pickle="example_set.pickle") \n
+        >>> print(dataset.vocab.vocab["index-word"][dataset[66][0][8][0]])
 
 
     """
@@ -129,7 +129,6 @@ class CustomDataset(Dataset):
             for word in sentence:
                 words += [word.form]
             self.sentences += [words]
-
 
     def get_all_embeddings(self, file, dimension=300):
         """

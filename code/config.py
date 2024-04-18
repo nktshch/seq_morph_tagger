@@ -24,6 +24,7 @@ config['grammeme_LSTM_input_dropout'] = 0.5
 
 config['learning_rate'] = 1.0
 config['max_epochs'] = 400
+config['no_improv'] = 50
 
 config['decoder_max_iterations'] = 12
 config['sentence_batch_size'] = 5
