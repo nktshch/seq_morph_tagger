@@ -13,7 +13,8 @@ class Encoder(nn.Module):
 
     Method forward takes words_batch -- size (batch_size, max_sentence_length) -- and
     chars_batch -- size (batch_size * max_sentence_length, max_word_length) -- as an input. It returns output from the
-    LSTM for every word in a sentence. The final shape of the output is (batch_size, max_sentence_length, 2 * word_LSTM_hidden).
+    LSTM for every word in a sentence.
+    The final shape of the output is (batch_size, max_sentence_length, 2 * word_LSTM_hidden).
 
     Parameters
     ----------
@@ -27,11 +28,14 @@ class Encoder(nn.Module):
         super().__init__()
         self.conf = conf
         self.data = data
-        self.word_embeddings = nn.Embedding.from_pretrained(torch.from_numpy(data.embeddings)).float() # from_pretrained only outputs torch.float64
+        # from_pretrained only outputs torch.float64
+        self.word_embeddings = nn.Embedding.from_pretrained(torch.from_numpy(data.embeddings)).float()
         self.char_embeddings = nn.Embedding(len(data.vocab.vocab['char-index']), self.conf["char_embeddings_dimension"])
         self.charLSTM = nn.LSTM(input_size=self.conf['char_embeddings_dimension'],
-                                hidden_size=self.conf['char_LSTM_hidden'], bidirectional=self.conf['char_LSTM_bidirectional'], batch_first=True)
-        self.wordLSTMcell = nn.LSTMCell(input_size=(self.conf['word_embeddings_dimension'] + self.conf['char_LSTM_hidden'] * self.conf['char_LSTM_directions']),
+                                hidden_size=self.conf['char_LSTM_hidden'],
+                                bidirectional=self.conf['char_LSTM_bidirectional'], batch_first=True)
+        self.wordLSTMcell = nn.LSTMCell(input_size=(self.conf['word_embeddings_dimension'] +
+                                                    self.conf['char_LSTM_hidden'] * self.conf['char_LSTM_directions']),
                                         hidden_size=self.conf['word_LSTM_hidden'])
         self.wordDropout_input = nn.Dropout(p=self.conf['word_LSTM_input_dropout'])
         self.wordDropout_state = nn.Dropout(p=self.conf['word_LSTM_state_dropout'])
@@ -62,12 +66,15 @@ class Encoder(nn.Module):
         # chars has shape (batch_size * max_sentence_length, max_word_length, char_embeddings_dimension)
         _, (hn, cn) = self.charLSTM(chars)
         # hn has shape (char_LSTM_directions, batch_size * max_sentence_length, char_LSTM_hidden)
-        chars = hn.permute(1, 0, 2).contiguous().view(current_batch_size, -1, hn.shape[2] * self.conf['char_LSTM_directions']).permute(1, 0, 2)
-        # we have to transpose twice because of how .view() changes shapes of tensors. Thoughtless usage can lead to serious mistakes!
+        chars = hn.permute(1, 0, 2).contiguous().view(
+            current_batch_size, -1, hn.shape[2] * self.conf['char_LSTM_directions']).permute(1, 0, 2)
+        # we have to transpose twice because of how .view() changes shapes of tensors.
+        # Thoughtless usage can lead to serious mistakes!
         # chars has shape (max_sentence_length, batch_size, char_LSTM_directions * char_LSTM_hidden)
         words = torch.concat((words, chars), dim=2)
         words = self.wordDropout_input(words)
-        # words has shape (max_sentence_length, batch_size, word_embeddings_dimension + char_LSTM_directions * char_LSTM_hidden)
+        # words has shape
+        # (max_sentence_length, batch_size, word_embeddings_dimension + char_LSTM_directions * char_LSTM_hidden)
 
         hidden_forward, cell_forward = self.loop(words)
 

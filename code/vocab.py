@@ -6,7 +6,6 @@ import os
 import pyconll
 from collections import Counter
 import pickle
-import numpy as np
 
 
 class Vocab:
@@ -46,7 +45,7 @@ class Vocab:
         
         print("Creating vocab")
         
-        if (os.path.exists(self.dictionary_file)):
+        if os.path.exists(self.dictionary_file):
             with open(self.dictionary_file, 'rb') as f:
                 self.vocab = pickle.load(f)
                 if not len(self.vocab) == len(self.dictionaries):
@@ -178,8 +177,9 @@ class Vocab:
         counter = Counter([token.form for sentence in sentences for _, token in enumerate(sentence)])
         singletons = [token for token, cnt in counter.items() if cnt == 1]
         return self.get_dictionaries(singletons)
-    
-    def get_dictionaries(self, data):
+
+    @staticmethod
+    def get_dictionaries(data):
         """
         Create two dictionaries from list:
         first with element:index pairs, second with index:element pairs
@@ -195,6 +195,6 @@ class Vocab:
         dict
             Dictionary with index:element pairs
         """
-        stoi = { element:index for index, element in enumerate(data) }
-        itos = { index:element for index, element in enumerate(data) }
+        stoi = {element: index for index, element in enumerate(data)}
+        itos = {index: element for index, element in enumerate(data)}
         return stoi, itos

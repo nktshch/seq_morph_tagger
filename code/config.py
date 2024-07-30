@@ -5,40 +5,34 @@ config.py contains dictionary with all necessary hyperparameters as well as path
 import argparse
 from torch import cuda
 
-config = {}
+config = {'word_embeddings_dimension': 300,
+          'char_embeddings_dimension': 100,
+          'grammeme_embeddings_dimension': 150,
+          'word_LSTM_bidirectional': True,
+          'char_LSTM_bidirectional': True,
+          'word_LSTM_hidden': 400,
+          'char_LSTM_hidden': 150,
+          'word_LSTM_input_dropout': 0.5,
+          'word_LSTM_state_dropout': 0.3,
+          'word_LSTM_output_dropout': 0.5,
+          'grammeme_LSTM_input_dropout': 0.5,
+          'clip': 5,
+          'learning_rate': 1.0,
+          'max_epochs': 400,
+          'no_improv': 50,
+          'bucket_train_data': True,
+          'decoder_max_iterations': 12,
+          'sentence_train_batch_size': 5,
+          'sentence_eval_batch_size': 5,
+          'UNK': "$UNK$",
+          'NUM': "$NUM$",
+          'NONE': "O",
+          'SOS': "$SOS$",  # start of sequence
+          'EOS': "$EOS$",  # end of sequence
+          'PAD': "$PAD$",  # padding
+          'dictionary_file': r".\data\dictionaries.pickle",  # file where all the dictionaries will be stored
+          'embeddings_file': r".\data\cc.ru.300.bin"}  # file with fastText embeddings, .bin extension
 
-config['word_embeddings_dimension'] = 300 # fastText embeddings
-config['char_embeddings_dimension'] = 100
-config['grammeme_embeddings_dimension'] = 150
-
-config['word_LSTM_bidirectional'] = True
-config['char_LSTM_bidirectional'] = True
-
-config['word_LSTM_hidden'] = 400
-config['char_LSTM_hidden'] = 150
-
-config['word_LSTM_input_dropout'] = 0.5
-config['word_LSTM_state_dropout'] = 0.3
-config['word_LSTM_output_dropout'] = 0.5
-config['grammeme_LSTM_input_dropout'] = 0.5
-
-config['learning_rate'] = 1.0
-config['max_epochs'] = 400
-config['no_improv'] = 50
-
-config['decoder_max_iterations'] = 12
-config['sentence_batch_size'] = 5
-config['UNK'] = "$UNK$"
-config['NUM'] = "$NUM$"
-config['NONE'] = "O"
-config['SOS'] = "$SOS$" # start of sequence
-config['EOS'] = "$EOS$" # end of sequence
-config['PAD'] = "$PAD$" # padding
-
-
-
-config['dictionary_file'] = r".\data\dictionaries.pickle" # file where all the dictionaries will be stored
-config['embeddings_file'] = r".\data\cc.ru.300.bin" # file with fastText embeddings, .bin extension
 
 def configurate():
     """
@@ -59,9 +53,12 @@ def parse_arguments():
     argp.add_argument('train_files', nargs='+', help='files with training data, .conllu extension')
     argp.add_argument('valid_files', nargs='+', help='files with validation data, .conllu extension')
     argp.add_argument('test_files', nargs='+', help='files with testing data, .conllu extension')
-    argp.add_argument('--train_sentences_pickle', help='file for (or containing) preloaded CoNLL-U training data, .pickle extension')
-    argp.add_argument('--valid_sentences_pickle', help='file for (or containing) preloaded CoNLL-U validation data, .pickle extension')
-    argp.add_argument('--test_sentences_pickle', help='file for (or containing) preloaded CoNLL-U testing data, .pickle extension')
+    argp.add_argument('--train_sentences_pickle',
+                      help='file for (or containing) preloaded CoNLL-U training data, .pickle extension')
+    argp.add_argument('--valid_sentences_pickle',
+                      help='file for (or containing) preloaded CoNLL-U validation data, .pickle extension')
+    argp.add_argument('--test_sentences_pickle',
+                      help='file for (or containing) preloaded CoNLL-U testing data, .pickle extension')
 
     args = argp.parse_args()
     config['phase'] = args.phase
