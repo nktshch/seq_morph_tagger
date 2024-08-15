@@ -1,6 +1,4 @@
-"""
-Docstring for dataset.py
-"""
+"""Docstring for dataset.py."""
 
 import os
 import pickle
@@ -30,24 +28,24 @@ def main(conf):
 
 
 class CustomDataset(Dataset):
-    """
-    Class loads fastText embeddings and CONLL-U sentences from files. It inherits Dataset class of PyTorch module
+    """Loads fastText embeddings and CONLL-U sentences from files. It inherits Dataset class of PyTorch module.
 
-    Parameters
-    ----------
-    conf : dict
-        Dictionary with configuration parameters
-    vocab : Vocab
-        Instance of class containing vocabulary
-    files : iterable
-        List containing .conllu files. This parameter is used only if there is no .pickle file containing sentences
-    sentences_pickle : str, default None
-        Path to the .pickle file with sentences. If the file does not exist, class creates it.
-        If None, does not save sentences in a file
-    training_set : bool, default True
-        Flag to show whether this is a training dataset. Creation of the embeddings depends on this
-    Examples
-    --------
+    Args:
+        conf (dict): Dictionary with configuration parameters.
+        vocab (Vocab): Instance of class containing vocabulary.
+        files (iterable): List containing .conllu files. This parameter is used only if there is no .pickle file
+            containing sentences.
+        sentences_pickle (str, default None): Path to the .pickle file with sentences.
+            If the file does not exist, class creates it. If None, does not save sentences in a file.
+        training_set (bool, default True): Flag to show whether this is a training dataset. Creation of the embeddings
+            depends on this.
+
+    Attributes:
+        vocab: Vocabulary created in vocab.py.
+        embeddings: For training set, contains embeddings.
+        sentences: List of lists of strings. Raw sentences.
+
+    Examples:
         >>> dataset = CustomDataset(config, Vocab(config), config['train_files'], sentences_pickle="example_set.pickle")
         >>> print(dataset.vocab.vocab["index-word"][dataset[66][0][8][0]])
     """
@@ -66,16 +64,12 @@ class CustomDataset(Dataset):
             self.get_all_embeddings(self.conf["embeddings_file"], dimension=self.conf['word_embeddings_dimension'])
 
     def __len__(self):
-        """
-        Returns the number of sentences in dataset
-        """
+        """Returns the number of sentences in dataset."""
 
         return len(self.sentences)
 
     def __getitem__(self, index):
-        """
-        Returns indices of words, chars, and grammemes for a sentence with a given index
-        """
+        """Returns indices of words, chars, and grammemes for a sentence with a given index."""
         words = []
         labels = []
         for word in self.sentences[index]:
@@ -95,10 +89,10 @@ class CustomDataset(Dataset):
         return words, labels
 
     def get_all_sentences(self):
-        """
-        Loads sentences from their .pickle file, if it exists.
+        """Loads sentences from their .pickle file, if it exists.
+
         Otherwise, loads them from .conllu files and stores in .pickle file, if it is given as arguments.
-        Also, stores the sentences as list of lists of words (strings)
+        Also, stores the sentences as list of lists of words (strings).
         """
 
         print("Loading sentences for dataset")
@@ -128,22 +122,19 @@ class CustomDataset(Dataset):
             self.sentences += [words]
 
     def get_all_embeddings(self, file, dimension=300):
-        """
-        Loads embeddings from file and stores them in the class variable as list of ndarrays. If a word doesn't have
-        the embedding, it is assigned a random one using normal distribution.
+        """Loads embeddings from file and stores them in the class variable as list of ndarrays.
 
-        Parameters
-        ----------
-        file : str
-            The file containing fastText embeddings
-        dimension : int, default 300
-            The dimension of embeddings
+        If a word doesn't have the embedding, it is assigned a random one using normal distribution.
+
+        Args:
+            file (str): The file containing fastText embeddings.
+            dimension (int, default 300): The dimension of embeddings.
         """
 
         print("Loading fastText embeddings")
 
         # fastText takes a lot of time to load embeddings (maybe there is no problem because we only load them once)
-        assert os.path.exists(file), "There is no file containing embeddings"
+        assert os.path.exists(file), f"There is no file containing embeddings {file}"
 
         ft = fasttext.load_model(file)
 

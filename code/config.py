@@ -1,6 +1,4 @@
-"""
-config.py contains dictionary with all necessary hyperparameters as well as paths to necessary files
-"""
+"""Contains dictionary with all necessary hyperparameters as well as paths to necessary files."""
 
 import argparse
 from torch import cuda
@@ -30,14 +28,11 @@ config = {'word_embeddings_dimension': 300,
           'SOS': "$SOS$",  # start of sequence
           'EOS': "$EOS$",  # end of sequence
           'PAD': "$PAD$",  # padding
-          'dictionary_file': r".\data\dictionaries.pickle",  # file where all the dictionaries will be stored
           'embeddings_file': r".\data\cc.ru.300.bin"}  # file with fastText embeddings, .bin extension
 
 
 def configurate():
-    """
-    Adds command line arguments to config dictionary.
-    """
+    """Adds command line arguments to config dictionary."""
 
     parse_arguments()
 
@@ -53,18 +48,23 @@ def parse_arguments():
     argp.add_argument('train_files', nargs='+', help='files with training data, .conllu extension')
     argp.add_argument('valid_files', nargs='+', help='files with validation data, .conllu extension')
     argp.add_argument('test_files', nargs='+', help='files with testing data, .conllu extension')
+    argp.add_argument('--model', help='file to save save model to')
     argp.add_argument('--train_sentences_pickle',
                       help='file for (or containing) preloaded CoNLL-U training data, .pickle extension')
     argp.add_argument('--valid_sentences_pickle',
                       help='file for (or containing) preloaded CoNLL-U validation data, .pickle extension')
     argp.add_argument('--test_sentences_pickle',
                       help='file for (or containing) preloaded CoNLL-U testing data, .pickle extension')
+    argp.add_argument('--dictionary_file',
+                      help='file where all the dictionaries will be stored, .pickle extension')
 
     args = argp.parse_args()
     config['phase'] = args.phase
     config['train_files'] = args.train_files
     config['valid_files'] = args.valid_files
     config['test_files'] = args.test_files
+    config['model'] = args.model
     config['train_sentences_pickle'] = args.train_sentences_pickle
     config['valid_sentences_pickle'] = args.valid_sentences_pickle
     config['test_sentences_pickle'] = args.test_sentences_pickle
+    config['dictionary_file'] = args.dictionary_file

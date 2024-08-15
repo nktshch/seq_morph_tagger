@@ -1,6 +1,4 @@
-"""
-Docstring for vocab.py
-"""
+"""Docstring for vocab.py."""
 
 import os
 import pyconll
@@ -9,16 +7,17 @@ import pickle
 
 
 class Vocab:
-    """
-    Class contains dictionary of dictionaries Vocab.vocab
-    Its keys are "word-index", "index-word", "grammeme-index", "index-grammeme", 
-    "char-index", "index-char", "singleton-index", "index-singleton"
-    Each of them corresponds to a dictionary that maps element to index or vice versa
-    
-    Parameters
-    ----------
-    conf : dict
-        Dictionary with configuration parameters
+    """Contains dictionary of dictionaries.
+
+    Its keys are "word-index", "index-word", "grammeme-index", "index-grammeme",
+    "char-index", "index-char", "singleton-index", "index-singleton".
+    Each of them corresponds to a dictionary that maps element to index or vice versa.
+
+    Args:
+        conf: Dictionary with configuration parameters.
+
+    Attributes:
+        vocab: Dictionary with all the dictionaries that map strings to indices or vice versa.
     """
     
     def __init__(self, conf):
@@ -40,7 +39,7 @@ class Vocab:
     def generate_dictionaries(self):
         """
         Loads dictionary of dictionaries (vocab["word-index"] etc.) from dictionaries.pickle or
-        creates it and saves into file 
+        creates it and saves into file.
         """
         
         print("Creating vocab")
@@ -61,7 +60,7 @@ class Vocab:
         """
         Creates dictionary Vocab.vocab of dictionaries {index:element} and {element:index}
         where element is wordform, grammeme, char, singleton.
-        This function also saves it into a file via pickle package
+        This function also saves it into a file via pickle package.
         """
         # There is no way to create empty sentences_train object that will allow summing itself with
         # pyconll.unit.conll.Conll object. For this reason we first consider only the first file in the list,
@@ -82,18 +81,13 @@ class Vocab:
     def get_all_wordforms(self, sentences):
         """
         Gets all wordforms in the dataset and creates two dictionaries:
-        one with wordform:index pairs, other with index:wordform pairs
-        
-        Parameters
-        ----------
-        sentences : pyconll.unit.conll.Conll
-            All of the sentences from which to get wordforms, pyconll format
-        Returns
-        -------
-        dict
-            Dictionary with wordform:index pairs
-        dict
-            Dictionary with index:wordform pairs
+        one with wordform:index pairs, other with index:wordform pairs.
+
+        Args:
+            sentences (pyconll.unit.conll.Conll): All of the sentences from which to get wordforms.
+
+        Returns:
+            tuple: Dictionaries with wordform->index and index->wordform pairs.
         """
                 
         wordforms = set()
@@ -107,18 +101,13 @@ class Vocab:
     def get_all_grammemes(self, sentences):
         """
         Gets all grammemes in the dataset and creates two dictionaries:
-        one with grammeme:index pairs, other with index:grammeme pairs
-        
-        Parameters
-        ----------
-        sentences : pyconll.unit.conll.Conll
-            All of the sentences from which to get grammemes, pyconll format
-        Returns
-        -------
-        dict
-            Dictionary with grammeme:index pairs
-        dict
-            Dictionary with index:grammeme pairs
+        one with grammeme:index pairs, other with index:grammeme pairs.
+
+        Args:
+            sentences (pyconll.unit.conll.Conll): All of the sentences from which to get grammemes.
+
+        Returns:
+            tuple: Dictionaries with grammeme->index and index->grammeme pairs.
         """
         
         grammemes = set()
@@ -134,14 +123,13 @@ class Vocab:
     def get_all_chars(self, sentences):
         """
         Gets all chars in the dataset and creates two dictionaries:
-        one with char:index pairs, other with index:char pairs
+        one with char:index pairs, other with index:char pairs.
 
-        Returns
-        -------
-        dict
-            Dictionary with char:index pairs
-        dict
-            Dictionary with index:char pairs
+        Args:
+            sentences (pyconll.unit.conll.Conll): All of the sentences from which to get chars.
+
+        Returns:
+            tuple: Dictionaries with char->index and index->char pairs.
         """
         
         wordforms = set()
@@ -160,18 +148,13 @@ class Vocab:
     def get_all_singletons(self, sentences):
         """
         Gets all singletons in the dataset and creates two dictionaries:
-        one with singleton:index pairs, other with index:singleton pairs
-        
-        Parameters
-        ----------
-        sentences : pyconll.unit.conll.Conll
-            All of the sentences from which to get singletons, pyconll format
-        Returns
-        -------
-        dict
-            Dictionary with singleton:index pairs
-        dict
-            Dictionary with index:singleton pairs
+        one with singleton:index pairs, other with index:singleton pairs.
+
+        Args:
+            sentences (pyconll.unit.conll.Conll): All of the sentences from which to get singletons.
+
+        Returns:
+            tuple: Dictionaries with singleton->index and index->singleton pairs.
         """
         
         counter = Counter([token.form for sentence in sentences for _, token in enumerate(sentence)])
@@ -182,19 +165,15 @@ class Vocab:
     def get_dictionaries(data):
         """
         Create two dictionaries from list:
-        first with element:index pairs, second with index:element pairs
-        
-        Parameters
-        ----------
-        data : list
-            List with elements to be turned into dictionaries
-        Returns
-        -------
-        dict
-            Dictionary with element:index pairs
-        dict
-            Dictionary with index:element pairs
+        first with element:index pairs, second with index:element pairs.
+
+        Args:
+            data (list): List with elements to be turned into dictionaries.
+
+        Returns:
+            tuple: Dictionaries with element->index and index->element pairs.
         """
+
         stoi = {element: index for index, element in enumerate(data)}
         itos = {index: element for index, element in enumerate(data)}
         return stoi, itos

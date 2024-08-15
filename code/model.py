@@ -1,6 +1,4 @@
-"""
-Docstring for model.py
-"""
+"""Docstring for model.py."""
 
 import torch
 import torch.nn as nn
@@ -32,16 +30,11 @@ def main(conf):
 
 
 class Model(nn.Module):
-    """
-    Class takes batches produced by DataLoader and assignes embeddings to words using WordEmbeddings class.
-    Creates an instance of CustomDataset.
+    """Contains encoder and decoder, methods to calculate metrics and to convert decoder's output into strings.
 
-    Parameters
-    ----------
-    conf : dict
-        Dictionary with configuration parameters
-    data : CustomDataset
-        Instance of class containing dataset
+    Args:
+        conf (dict): Dictionary with configuration parameters.
+        data (CustomDataset): Instance of class containing dataset.
     """
 
     def __init__(self, conf, data):
@@ -55,22 +48,18 @@ class Model(nn.Module):
         self.optimizer = torch.optim.SGD(self.parameters(), lr=self.conf['learning_rate'])
 
     def forward(self, words_batch, chars_batch, labels_batch):
-        """
-        Uses Encoder and Decoder to perform one pass on a sinle batch.
+        """Uses Encoder and Decoder to perform one pass on a sinle batch.
 
-        Parameters
-        ----------
-        words_batch : torch.Tensor
-            Tensor of words indices for every word in a batch. Size (max_sentence_length, batch_size)
-        chars_batch : torch.Tensor
-            Tensor of chars indices for every word in a batch. Size (batch_size * max_sentence_length, max_word_length)
-        labels_batch : torch.Tensor
-            Tensor of labels indices for every word in a batch.
-            Size (max_label_length, batch_size * max_sentence_length)
-        Returns
-        -------
-        tuple
-            Tuple consists of predicted grammemes and their probabilities.
+        Args:
+            words_batch (torch.Tensor): Tensor of words indices for every word in a batch.
+                Size (max_sentence_length, batch_size).
+            chars_batch (torch.Tensor): Tensor of chars indices for every word in a batch.
+                Size (batch_size * max_sentence_length, max_word_length).
+            labels_batch (torch.Tensor): Tensor of labels indices for every word in a batch.
+                Size (max_label_length, batch_size * max_sentence_length).
+
+        Returns:
+            tuple: Tuple consists of predicted grammemes and their probabilities.
         """
 
         # shape (max_sentence_length, batch_size, grammeme_LSTM_hidden)
@@ -82,6 +71,11 @@ class Model(nn.Module):
         return predictions, probabilities
 
     def calculate_accuracy(self, predictions, targets):
+        """Metrics is a ratio of correctly predicted tags to total number of tags.
+
+        All grammemes in a tag must be predicted correctly for it to count as correct.
+        """
+
         n_total, n_correct = 0, 0
         masked_predictions = masked_select(predictions.permute(1, 0),
                                            self.data.vocab.vocab["grammeme-index"][self.conf['EOS']])
@@ -94,18 +88,15 @@ class Model(nn.Module):
         return n_correct, n_total
 
     def predictions_to_grammemes(self, predictions):
-        """
-        Turns indices of predictions produced by decoder into actual grammemes (strings)
+        """Turns indices of predictions produced by decoder into actual grammemes (strings).
 
-        Parameters
-        ----------
-        predictions : torch.Tensor
-            2D Tensor containing indices
-        Returns
-        -------
-        list
-            List of lists of predicions
+        Args:
+            predictions (torch.Tensor): 2D Tensor containing indices.
+
+        Returns:
+        list: List of lists of predicions.
         """
+
         tags = []
         for tag_indices in predictions:
             tag = []
@@ -116,25 +107,19 @@ class Model(nn.Module):
 
 
 class Trainer(nn.Module):
-    def __init__(self, conf, model, valid_data, test_data, subset_size=0):
-        """
-        Class performs training. More info will be added later
+    """Class performs training. More info will be added later.
 
-        Parameters
-        ----------
-        conf : dict
-            Dictionary with configuration parameters
-        model : Model
-            Instance of class containing model parameters
-        valid_data : CustomDataset
-            Dataset for validation
-        test_data : CustomDataset
-            Dataset for testing
-        subset_size : float or int
-            Whether to use full dataset from model.data, or only some part of it. If int, treated as the number
-            of samples from model.data with 0 treated as a whole dataset.
+    Args:
+        conf (dict): Dictionary with configuration parameters.
+        model (Model): Instance of class containing model parameters.
+        valid_data (CustomDataset): Dataset for validation.
+        test_data (CustomDataset): Dataset for testing.
+        subset_size (float or int): The part of dataset from model.data that will be used.
+            If int, treated as the number of samples from model.data with 0 treated as a whole dataset.
             If float, should be between 0 and 1, treated as the proportion of the dataset used during training.
-        """
+    """
+
+    def __init__(self, conf, model, valid_data, test_data, subset_size=0):
         super().__init__()
         self.conf = conf
         self.model = model
@@ -179,6 +164,7 @@ class Trainer(nn.Module):
             self.train_epoch()
             valid_accuracy, valid_loss = self.valid_epoch()
             print(f"valid accuracy at epoch {self.current_epoch}: {valid_accuracy}")
+            print(f"valid loss: {valid_loss}")
             if valid_loss >= self.best_metrics:
                 self.no_improv += 1
                 if self.no_improv >= self.conf['no_improv']:
@@ -187,7 +173,7 @@ class Trainer(nn.Module):
             else:
                 self.no_improv = 0
                 self.best_metrics = valid_loss
-                torch.save(self.model, r".\models\model.pt")  # put the path elsewhere and create folder if necessary
+                torch.save(self.model, config['model'])  # put the path elsewhere and create folder if necessary
             self.current_epoch += 1
 
     def train_epoch(self):
@@ -263,34 +249,29 @@ class Trainer(nn.Module):
 
 
 def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2):  # do all preprocessing here
-    """
-    Function takes batch created with CustomDataset and performs padding. batch consists of indices of words,
-    chars, and labels (grammemes). The returned batches are tensors.
+    """Takes batch created with CustomDataset and performs padding.
 
-    Parameters
-    ---------
-    batch : list
-        A single batch to be collated. Batch consists of tuples (words, labels) generated by CustomDataset
-    pad_id : int, default 0
-        The id of the pad token in all dictionaries
-    sos_id : int, default 1
-        The id of the sos (start of sequence) token
-    eos_id : int, default 2
-        The id of the eos (end of sequence) token
-    Returns
-    -------
-    tuple
-        (words_batch, chars_batch, labels_batch). All of them have type torch.Tensor. Size of words_batch is
-        (max_sentence_length, batch_size).
-        Size of chars_batch is (batch_size * max_sentence_length, max_word_length). Size of labels_batch is
-        (max_label_length, batch_size * max_sentence_length)
+    batch consists of indices of words, chars, and labels (grammemes). The returned batches are tensors.
+
+    Args:
+        batch (list): Single batch to be collated.
+            Batch consists of tuples (words, labels) generated by CustomDataset.
+        pad_id (int, default 0): The id of the pad token in all dictionaries.
+        sos_id (int, default 1): The id of the sos (start of sequence) token.
+        eos_id (int, default 2): The id of the eos (end of sequence) token.
+
+    Returns:
+        tuple: (words_batch, chars_batch, labels_batch).
+            All of them have type torch.Tensor. Size of words_batch is (max_sentence_length, batch_size).
+            Size of chars_batch is (batch_size * max_sentence_length, max_word_length). Size of labels_batch is
+            (max_label_length, batch_size * max_sentence_length)
     """
 
     sentences = [element[0] for element in batch]  # sentences is a list of all list of words
     tags = [element[1] for element in batch]  # tags is a list of all lists of grammemes
     max_sentence_length = max(map(lambda x: len(x), sentences))
     max_word_length = max([max(map(lambda x: len(x), sentence)) for sentence in sentences])
-    max_label_length = 2 + max([max(map(lambda x: len(x), tag)) for tag in tags])  # +2 because of the bos and eos token
+    max_label_length = 2 + max([max(map(lambda x: len(x), tag)) for tag in tags])  # +2 because of the sos and eos token
     words_batch = []
     chars_batch = []
     labels_batch = []
@@ -326,34 +307,28 @@ def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2):  # do all preprocessing 
 
 
 def subset_from_dataset(data, n):
-    """
-    Outputs first n entries from data (type Dataset) as another dataset
-    """
+    """Outputs first n entries from data (type Dataset) as another dataset."""
     return Subset(data, range(n))
 
 
 def masked_select(a, value):
-    """
-    Zero all elements that come after a given value in a row. Used for zeroing elements after EOS token
-    Parameters
-    ----------
-    a : torch.Tensor
-        Input tensor
-    value : a.dtype
-        Value after which all elements should be equal to zero (EOS token index)
-    Returns
-    -------
-    torch.Tensor
-        Masked tensor of the same shape as a
-    Examples
-    --------
-    >>> input_tensor = torch.Tensor([[1, 2, 3, 4, 99, 5, 2, 1],
-                                     [1, 99, 99, 4, 3, 5, 99, 3],
-                                     [1, 3, 3, 4, 1, 5, 2, 1]])
-    >>> print(masked_select(input_tensor, 99))
-    tensor([[ 1.,  2.,  3.,  4., 99.,  0.,  0.,  0.],
-            [ 1., 99.,  0.,  0.,  0.,  0.,  0.,  0.],
-            [ 1.,  3.,  3.,  4.,  1.,  5.,  2.,  1.]])
+    """Zero all elements that come after a given value in a row. Used for zeroing elements after EOS token.
+
+    Args:
+        a (torch.Tensor): Input tensor.
+        value (a.dtype): Value after which all elements should be equal to zero (EOS token index).
+
+    Returns:
+        torch.Tensor: Masked tensor of the same shape as a.
+
+    Examples:
+        >>> input_tensor = torch.Tensor([[1., 2., 3., 4., 99., 5., 2., 1.],
+                              [1., 99., 99., 4., 3., 5., 99., 3.],
+                              [1., 3., 3., 4., 1., 5., 2., 1.]])
+        >>> print(masked_select(input_tensor, 99))
+        tensor([[ 1.,  2.,  3.,  4., 99.,  0.,  0.,  0.],
+                [ 1., 99.,  0.,  0.,  0.,  0.,  0.,  0.],
+                [ 1.,  3.,  3.,  4.,  1.,  5.,  2.,  1.]])
     """
 
     mask = []

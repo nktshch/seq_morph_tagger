@@ -1,27 +1,21 @@
-"""
-endoder.py has class Encoder that creates batches of words embeddings
-"""
+"""endoder.py has class Encoder that creates batches of words embeddings."""
 
 import torch
 import torch.nn as nn
 
 
 class Encoder(nn.Module):
-    """
-    Class creates embeddings for words and chars, puts them through LSTMs to produce word embeddings. It has access to
-    the instance of CustomDataset, created by Model class.
+    """Class creates embeddings for words and chars, puts them through LSTMs to produce word embeddings.
 
+    It has access to the instance of CustomDataset, created by Model class.
     Method forward takes words_batch -- size (batch_size, max_sentence_length) -- and
     chars_batch -- size (batch_size * max_sentence_length, max_word_length) -- as an input. It returns output from the
     LSTM for every word in a sentence.
     The final shape of the output is (batch_size, max_sentence_length, 2 * word_LSTM_hidden).
 
-    Parameters
-    ----------
-    conf : dict
-        Dictionary with configuration parameters
-    data : CustomDataset
-        Class instance from dataset.py
+    Args:
+        conf (dict): Dictionary with configuration parameters.
+        data (CustomDataset): Class instance from dataset.py.
     """
 
     def __init__(self, conf, data):
@@ -42,21 +36,19 @@ class Encoder(nn.Module):
         self.wordDropout_output = nn.Dropout(p=self.conf['word_LSTM_output_dropout'])
 
     def forward(self, words_batch, chars_batch):
-        """
-        Takes batches of indices of words and chars and creates embeddings with LSTM.
+        """Takes batches of indices of words and chars and creates embeddings with LSTM.
+
         PyTorch LSTM module doesn't return cell states by default. That is why we have to use LSTMCell in a loop.
 
-        Parameters
-        ----------
-        words_batch : torch.Tensor
-            Tensor of words indices for every word in a batch. Size (max_sentence_length, batch_size)
-        chars_batch : torch.Tensor
-            Tensor of chars indices for every word in a batch. Size (batch_size * max_sentence_length, max_word_length)
-        Returns
-        -------
-        tuple
-            Tuple consists of two tensors - one with hidden states, and one with cell states of the word LSTM.
-            The shape of each tensor is (max_sentence_length, batch_size, grammeme_LSTM_hidden)
+        Args:
+            words_batch (torch.Tensor): Tensor of words indices for every word in a batch.
+                Size (max_sentence_length, batch_size).
+            chars_batch (torch.Tensor): Tensor of chars indices for every word in a batch.
+                Size (batch_size * max_sentence_length, max_word_length).
+
+        Returns:
+            tuple: Tuple consists of two tensors - one with hidden states, and one with cell states of the word LSTM.
+                The shape of each tensor is (max_sentence_length, batch_size, grammeme_LSTM_hidden).
         """
 
         current_batch_size = words_batch.shape[1]

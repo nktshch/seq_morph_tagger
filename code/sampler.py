@@ -5,7 +5,7 @@ import math
 
 class BucketSampler(Sampler[int]):
     def __init__(self, sentences, batch_size: int) -> None:
-        super().__init__()
+        super().__init__(sentences)
         self.sentences = sentences
         self.batch_size = batch_size
         self.length = None
