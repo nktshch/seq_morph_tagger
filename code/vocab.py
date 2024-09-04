@@ -1,6 +1,6 @@
 """Docstring for vocab.py."""
 
-import os
+from pathlib import Path
 import pyconll
 from collections import Counter
 import pickle
@@ -22,7 +22,7 @@ class Vocab:
     
     def __init__(self, conf):
 
-        self.train_files = conf["train_files"]
+        self.train_directory = conf["train_directory"]
         self.dictionary_file = conf["dictionary_file"]
         self.PAD = conf["PAD"]
         self.EOS = conf["EOS"]
@@ -43,8 +43,8 @@ class Vocab:
         """
         
         print("Creating vocab")
-        
-        if os.path.exists(self.dictionary_file):
+
+        if Path(self.dictionary_file).exists():
             with open(self.dictionary_file, 'rb') as f:
                 self.vocab = pickle.load(f)
                 if not len(self.vocab) == len(self.dictionaries):
@@ -62,11 +62,12 @@ class Vocab:
         where element is wordform, grammeme, char, singleton.
         This function also saves it into a file via pickle package.
         """
-        # There is no way to create empty sentences_train object that will allow summing itself with
-        # pyconll.unit.conll.Conll object. For this reason we first consider only the first file in the list,
-        # and then add another sentences if there are any
-        sentences_train = pyconll.load_from_file(self.train_files[0])
-        for file in self.train_files[1:]:
+        # There is no way of creating empty sentences_train variable that will allow summing itself with
+        # pyconll.unit.conll.Conll object. For this reason, we first consider only the first file in the list,
+        # and then add other sentences if there are any
+        train_files = list(Path(self.train_directory).iterdir())
+        sentences_train = pyconll.load_from_file(train_files[0])
+        for file in train_files[1:]:
             sentences_train = sentences_train + pyconll.load.load_from_file(file)
 
         self.vocab["word-index"], self.vocab["index-word"] = self.get_all_wordforms(sentences_train)
