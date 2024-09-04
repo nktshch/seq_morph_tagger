@@ -48,7 +48,9 @@ class Decoder(nn.Module):
         """
 
         # during training, these will be fed one at a time, instead of outputs at each time step
-        labels = self.grammeme_embeddings(labels_batch[:-1])  # embeddings of grammemes,
+        if labels_batch.shape[0] != 1:
+            labels_batch = labels_batch[:-1]
+        labels = self.grammeme_embeddings(labels_batch) # embeddings of grammemes,
         # size (max_grammeme_length, batch_size * max_sentence_length, grammeme_embeddings_dimension)
         # size[0] = loop length (sequence length), size[1] = size of the batch, size[3] = input size
         labels = self.grammemeDropout(labels)
@@ -66,8 +68,7 @@ class Decoder(nn.Module):
 
         else:  # using generated grammemes as the next input
             grammemes = labels[0]
-            # TODO: replace len(labels) with self.conf['decoder_max_iterations']; it will affect accuracy computation
-            for _ in range(len(labels)):
+            for _ in range(self.conf['decoder_max_iterations']):
                 hk, ck = self.grammemeLSTMcell(grammemes, (hk, ck))
                 probabilities_batch = self.linear(hk)
                 probabilities += [probabilities_batch]

@@ -104,18 +104,18 @@ def predictions_to_grammemes(vocabulary, predictions):
     """Turns indices of predictions produced by decoder into actual grammemes (strings).
 
     Args:
-        vocabulary (Vocab): instance of Vocab class.
+        vocabulary (dict): Vocabulary from Vocab class.
         predictions (torch.Tensor): 2D Tensor containing indices.
 
     Returns:
-    list: List of lists of predicions.
+        list: List of lists of predicions.
     """
 
     tags = []
     for tag_indices in predictions:
         tag = []
         for grammeme_index in tag_indices:
-            tag += [vocabulary.vocab['index-grammeme'][grammeme_index.item()]]
+            tag += [vocabulary['index-grammeme'][grammeme_index.item()]]
         tags += [tag]
     return tags
 

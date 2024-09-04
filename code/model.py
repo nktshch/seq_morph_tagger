@@ -40,6 +40,11 @@ class Model(nn.Module):
             tuple: Tuple consists of predicted grammemes and their probabilities.
         """
 
+        # not sure if this is ok to switch devices like this
+        words_batch = words_batch.to(self.conf['device'])
+        chars_batch = chars_batch.to(self.conf['device'])
+        labels_batch = labels_batch.to(self.conf['device'])
+
         # shape (max_sentence_length, batch_size, grammeme_LSTM_hidden)
         encoder_hidden, encoder_cell = self.encoder(words_batch, chars_batch)
         decoder_hidden = encoder_hidden.permute(1, 0, 2).reshape(-1, encoder_hidden.size(dim=2))

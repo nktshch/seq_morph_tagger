@@ -51,7 +51,8 @@ class Encoder(nn.Module):
                 The shape of each tensor is (max_sentence_length, batch_size, grammeme_LSTM_hidden).
         """
 
-        current_batch_size = words_batch.shape[1]
+        # current_batch_size = words_batch.shape[1]
+        current_batch_size = words_batch.shape[1] if words_batch.dim() > 1 else 1
         words = self.word_embeddings(words_batch)
         chars = self.char_embeddings(chars_batch)
         # words has shape (max_sentence_length, batch_size, word_embeddings_dimension)

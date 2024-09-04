@@ -46,12 +46,12 @@ class Trainer(nn.Module):
         else:
             sampler = None
         self.train_loader = DataLoader(train_subset, batch_size=self.conf['sentence_train_batch_size'],
-                                       collate_fn=lambda x: tuple(x_.to(self.conf['device']) for x_ in collate_batch(x)),
+                                       collate_fn=collate_batch,
                                        sampler=sampler)
         self.valid_loader = DataLoader(valid_subset, batch_size=self.conf['sentence_eval_batch_size'],
-                                       collate_fn=lambda x: tuple(x_.to(self.conf['device']) for x_ in collate_batch(x)))
+                                       collate_fn=collate_batch)
         self.test_loader = DataLoader(test_subset, batch_size=self.conf['sentence_eval_batch_size'],
-                                      collate_fn=lambda x: tuple(x_.to(self.conf['device']) for x_ in collate_batch(x)))
+                                      collate_fn=collate_batch)
 
         self.writer = SummaryWriter()
         self.current_epoch = 0
