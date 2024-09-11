@@ -1,7 +1,6 @@
 """Docstring for trainer.py"""
 
 from sampler import BucketSampler
-from utils import collate_batch, subset_from_dataset, calculate_accuracy
 
 import torch
 import torch.nn as nn
@@ -22,10 +21,11 @@ class Trainer(nn.Module):
             If float, should be between 0 and 1, treated as the proportion of the dataset used during training.
     """
 
-    def __init__(self, conf, model, valid_data, test_data, subset_size=0):
+    def __init__(self, conf, model, valid_data, test_data, run_number=0, subset_size=0):
         super().__init__()
         self.conf = conf
         self.model = model
+        self.vocab = model.data.vocab
 
         if subset_size == 0:
             train_subset = self.model.data
@@ -53,10 +53,13 @@ class Trainer(nn.Module):
         self.test_loader = DataLoader(test_subset, batch_size=self.conf['sentence_eval_batch_size'],
                                       collate_fn=collate_batch)
 
-        self.writer = SummaryWriter()
+        self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
+        self.optimizer = torch.optim.SGD(self.parameters(), lr=self.conf['learning_rate'])
+
+        self.writer = SummaryWriter(log_dir=self.conf['model'] + str(run_number))
         self.current_epoch = 0
         self.print_every = 20  # write to log every so many iteration
-        self.best_metrics = torch.inf
+        self.best_loss = torch.inf
         self.no_improv = 0
 
     def epoch_loops(self):
@@ -69,14 +72,14 @@ class Trainer(nn.Module):
             valid_accuracy, valid_loss = self.valid_epoch()
             print(f"valid accuracy at epoch {self.current_epoch}: {valid_accuracy}")
             print(f"valid loss: {valid_loss}")
-            if valid_loss >= self.best_metrics:
+            if valid_loss >= self.best_loss:
                 self.no_improv += 1
                 if self.no_improv >= self.conf['no_improv']:
                     print(f"No improvement for {self.conf['no_improv']} epochs, stopping early")
                     break
             else:
                 self.no_improv = 0
-                self.best_metrics = valid_loss
+                self.best_loss = valid_loss
                 torch.save(self.model, self.conf['model'])  # put the path elsewhere and create folder if necessary
             self.current_epoch += 1
 
@@ -87,14 +90,18 @@ class Trainer(nn.Module):
         # current_epoch_tags = [] # stores tags for this epoch
 
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
-            self.model.optimizer.zero_grad()
+            words_batch = words_batch.to(self.conf['device'])
+            chars_batch = chars_batch.to(self.conf['device'])
+            labels_batch = labels_batch.to(self.conf['device'])
+
+            self.optimizer.zero_grad()
             _, probabilities = self.model(words_batch, chars_batch, labels_batch)
             targets = labels_batch[1:]  # slice is taken to ignore SOS token
 
-            loss = self.model.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            loss = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.conf['clip'])
-            self.model.optimizer.step()
+            self.optimizer.step()
             running_loss += loss.item()
 
             if (self.current_epoch * len(self.train_loader) + iteration) % self.print_every == 0:
@@ -113,13 +120,18 @@ class Trainer(nn.Module):
         running_error = 0.0
         correct, total = 0, 0
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
+            words_batch = words_batch.to(self.conf['device'])
+            chars_batch = chars_batch.to(self.conf['device'])
+            labels_batch = labels_batch.to(self.conf['device'])
+
             predictions, probabilities = self.model(words_batch, chars_batch, labels_batch)
             targets = labels_batch[1:]  # slice is taken to ignore SOS token
+            probabilities = probabilities[:len(targets)]
 
-            error = self.model.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            error = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             running_error += error.item()
 
-            correct_batch, total_batch = self.model.calculate_accuracy(predictions, targets)
+            correct_batch, total_batch = calculate_accuracy(self.vocab, self.conf, predictions, targets)
             correct += correct_batch
             total += total_batch
         valid_accuracy = correct / total
@@ -139,10 +151,14 @@ class Trainer(nn.Module):
         progress_bar = tqdm(enumerate(self.test_loader), total=len(self.test_loader))
         correct, total = 0, 0
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
+            words_batch = words_batch.to(self.conf['device'])
+            chars_batch = chars_batch.to(self.conf['device'])
+            labels_batch = labels_batch.to(self.conf['device'])
+
             predictions, probabilities = self.model(words_batch, chars_batch, labels_batch)
             targets = labels_batch[1:]  # slice is taken to ignore SOS token
 
-            correct_batch, total_batch = self.model.calculate_accuracy(predictions, targets)
+            correct_batch, total_batch = calculate_accuracy(self.vocab, self.conf, predictions, targets)
             correct += correct_batch
             total += total_batch
         test_accuracy = correct / total
@@ -150,3 +166,117 @@ class Trainer(nn.Module):
                                test_accuracy,
                                (self.current_epoch + 1) * len(self.valid_loader))
         return test_accuracy
+
+
+def calculate_accuracy(vocabulary, conf, predictions, targets):
+    """Metrics is a ratio of correctly predicted tags to total number of tags.
+
+    All grammemes in a tag must be predicted correctly for it to count as correct.
+    """
+
+    n_total, n_correct = 0, 0
+    masked_predictions = masked_select(predictions.permute(1, 0),
+                                       vocabulary.vocab["grammeme-index"][conf['EOS']])
+
+    for tag, target in zip(masked_predictions, targets.permute(1, 0)):
+        if target[0] != 0:
+            n_total += 1
+            n_correct += int(torch.equal(tag, target))
+
+    return n_correct, n_total
+
+
+def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2):  # do all preprocessing here
+    """Takes batch created with CustomDataset and performs padding.
+
+    batch consists of indices of words, chars, and labels (grammemes). The returned batches are tensors.
+
+    Args:
+        batch (list): Single batch to be collated.
+            Batch consists of tuples (words, labels) generated by CustomDataset.
+        pad_id (int, default 0): The id of the pad token in all dictionaries.
+        sos_id (int, default 1): The id of the sos (start of sequence) token.
+        eos_id (int, default 2): The id of the eos (end of sequence) token.
+
+    Returns:
+        tuple: (words_batch, chars_batch, labels_batch).
+            All of them have type torch.Tensor. Size of words_batch is (max_sentence_length, batch_size).
+            Size of chars_batch is (batch_size * max_sentence_length, max_word_length). Size of labels_batch is
+            (max_label_length, batch_size * max_sentence_length)
+    """
+
+    sentences = [element[0] for element in batch]  # sentences is a list of all list of words
+    tags = [element[1] for element in batch]  # tags is a list of all lists of grammemes
+    max_sentence_length = max(map(lambda x: len(x), sentences))
+    max_word_length = max([max(map(lambda x: len(x), sentence)) for sentence in sentences])
+    max_label_length = 2 + max([max(map(lambda x: len(x), tag)) for tag in tags])  # +2 because of the sos and eos token
+    words_batch = []
+    chars_batch = []
+    labels_batch = []
+    for words, labels in batch:
+        words_indices = []
+        chars_indices = []
+        labels_indices = []
+        for word in words:
+            word += [pad_id] * (max_word_length - len(word))  # id of the pad token must be 0
+            words_indices += [word[0]]
+            chars_indices += [word[1:]]
+        words_indices += [pad_id] * (max_sentence_length - len(words))
+        chars_indices += [[pad_id] * (max_word_length - 1)] * (max_sentence_length - len(words))
+
+        for label in labels:
+            label.insert(0, sos_id)  # id of the sos token must be 1
+            label += [eos_id]  # id of the eos token must be 2
+            label += [pad_id] * (max_label_length - len(label))
+            labels_indices += [label]
+        labels_indices += [[pad_id] * max_label_length] * (max_sentence_length - len(words))
+
+        words_batch += [words_indices]
+        chars_batch += [chars_indices]
+        labels_batch += [labels_indices]
+
+    words_batch = torch.tensor(words_batch, dtype=torch.long)
+    words_batch = words_batch.transpose(1, 0)
+    chars_batch = torch.tensor(chars_batch, dtype=torch.long)
+    chars_batch = chars_batch.view(-1, chars_batch.shape[2])
+    labels_batch = torch.tensor(labels_batch, dtype=torch.long)
+    labels_batch = labels_batch.view(-1, labels_batch.shape[2]).permute(1, 0)
+    return words_batch, chars_batch, labels_batch
+
+
+def subset_from_dataset(data, n):
+    """Outputs first n entries from data (type Dataset) as another dataset."""
+    return Subset(data, range(n))
+
+
+def masked_select(a, value):
+    """Zero all elements that come after a given value in a row. Used for zeroing elements after EOS token.
+
+    Args:
+        a (torch.Tensor): Input tensor.
+        value (a.dtype): Value after which all elements should be equal to zero (EOS token index).
+
+    Returns:
+        torch.Tensor: Masked tensor of the same shape as a.
+
+    Examples:
+        >>> input_tensor = torch.Tensor([[1., 2., 3., 4., 99., 5., 2., 1.],
+                              [1., 99., 99., 4., 3., 5., 99., 3.],
+                              [1., 3., 3., 4., 1., 5., 2., 1.]])
+        >>> print(masked_select(input_tensor, 99))
+        tensor([[ 1.,  2.,  3.,  4., 99.,  0.,  0.,  0.],
+                [ 1., 99.,  0.,  0.,  0.,  0.,  0.,  0.],
+                [ 1.,  3.,  3.,  4.,  1.,  5.,  2.,  1.]])
+    """
+
+    mask = []
+    rng = torch.arange(0, a.shape[1]).to(a.device)
+    for row in a:
+        equal = torch.isin(row, value)
+        if equal.nonzero().shape[0] != 0:
+            mask.append(torch.le(rng, equal.nonzero()[0]))
+        else:
+            mask.append(rng)
+
+    mask = torch.stack(mask)
+    return a * mask

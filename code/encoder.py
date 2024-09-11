@@ -22,7 +22,7 @@ class Encoder(nn.Module):
         super().__init__()
         self.conf = conf
         self.data = data
-        # from_pretrained only outputs torch.float64
+        # from_pretrained outputs only torch.float64
         self.word_embeddings = nn.Embedding.from_pretrained(torch.from_numpy(data.embeddings)).float()
         self.char_embeddings = nn.Embedding(len(data.vocab.vocab['char-index']), self.conf["char_embeddings_dimension"])
         self.charLSTM = nn.LSTM(input_size=self.conf['char_embeddings_dimension'],
@@ -51,19 +51,22 @@ class Encoder(nn.Module):
                 The shape of each tensor is (max_sentence_length, batch_size, grammeme_LSTM_hidden).
         """
 
-        # current_batch_size = words_batch.shape[1]
-        current_batch_size = words_batch.shape[1] if words_batch.dim() > 1 else 1
+        current_batch_size = words_batch.shape[1]
         words = self.word_embeddings(words_batch)
         chars = self.char_embeddings(chars_batch)
         # words has shape (max_sentence_length, batch_size, word_embeddings_dimension)
         # chars has shape (batch_size * max_sentence_length, max_word_length, char_embeddings_dimension)
         _, (hn, cn) = self.charLSTM(chars)
         # hn has shape (char_LSTM_directions, batch_size * max_sentence_length, char_LSTM_hidden)
-        chars = hn.permute(1, 0, 2).contiguous().view(
-            current_batch_size, -1, hn.shape[2] * self.conf['char_LSTM_directions']).permute(1, 0, 2)
-        # we have to transpose twice because of how .view() changes shapes of tensors.
-        # Thoughtless usage can lead to serious mistakes!
+
+        if hn.shape[0] == 1:
+            chars = hn[0].reshape(current_batch_size, -1, hn.shape[2] * hn.shape[0]).permute(1, 0, 2)
+        else:
+            chars = torch.concat((hn[0], hn[1]), dim=1).reshape(
+                current_batch_size, -1, hn.shape[2] * hn.shape[0]).permute(1, 0, 2)
+
         # chars has shape (max_sentence_length, batch_size, char_LSTM_directions * char_LSTM_hidden)
+
         words = torch.concat((words, chars), dim=2)
         words = self.wordDropout_input(words)
         # words has shape

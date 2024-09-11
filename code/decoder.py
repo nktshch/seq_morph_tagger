@@ -43,15 +43,15 @@ class Decoder(nn.Module):
                 Shape (max_sentence_length * batch_size, grammeme_LSTM_hidden).
         Returns:
             tuple: Tuple consists of predicted grammemes and probabilities.
-                The first tensor has shape (max_grammeme_length, batch_size * max_sentence_length).
-                The second tensor has shape (max_grammeme_length, batch_size * max_sentence_length, grammemes_in_vocab)
+                The first tensor has shape (max_label_length, batch_size * max_sentence_length).
+                The second tensor has shape (max_label_length, batch_size * max_sentence_length, grammemes_in_vocab)
         """
 
         # during training, these will be fed one at a time, instead of outputs at each time step
         if labels_batch.shape[0] != 1:
             labels_batch = labels_batch[:-1]
         labels = self.grammeme_embeddings(labels_batch) # embeddings of grammemes,
-        # size (max_grammeme_length, batch_size * max_sentence_length, grammeme_embeddings_dimension)
+        # size (max_label_length, batch_size * max_sentence_length, grammeme_embeddings_dimension)
         # size[0] = loop length (sequence length), size[1] = size of the batch, size[3] = input size
         labels = self.grammemeDropout(labels)
         hk = decoder_hidden
@@ -78,6 +78,6 @@ class Decoder(nn.Module):
 
         predictions = torch.stack(predictions)
         probabilities = torch.stack(probabilities)
-        # predictions has shape (max_grammeme_length, batch_size * max_sentence_length)
-        # probabilities has shape (max_grammeme_length, batch_size * max_sentence_length, grammemes_in_vocab)
+        # predictions has shape (max_label_length, batch_size * max_sentence_length)
+        # probabilities has shape (max_label_length, batch_size * max_sentence_length, grammemes_in_vocab)
         return predictions, probabilities

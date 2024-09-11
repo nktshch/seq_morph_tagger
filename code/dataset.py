@@ -1,5 +1,7 @@
 """Docstring for dataset.py."""
 
+from vocab import Vocab
+
 from pathlib import Path
 import pickle
 import pyconll
@@ -7,8 +9,6 @@ import numpy as np
 from torch.utils.data import Dataset
 import fasttext
 import fasttext.util
-
-from vocab import Vocab
 
 
 def main(conf):

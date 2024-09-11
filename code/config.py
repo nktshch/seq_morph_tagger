@@ -21,7 +21,7 @@ def parse_arguments(config):
     argp.add_argument('train_directory', help='directory containing files with training data, they should be .conllu')
     argp.add_argument('valid_directory', help='directory containing files with validation data, they should be .conllu')
     argp.add_argument('test_directory', help='directory containing files with testing data, they should be .conllu')
-    argp.add_argument('--model', help='file to save save model to')
+    argp.add_argument('--model', help='file to save model to')
     argp.add_argument('--train_sentences_pickle',
                       help='file for (or containing) preloaded CoNLL-U training data, .pickle extension')
     argp.add_argument('--valid_sentences_pickle',
@@ -30,6 +30,8 @@ def parse_arguments(config):
                       help='file for (or containing) preloaded CoNLL-U testing data, .pickle extension')
     argp.add_argument('--dictionary_file',
                       help='file where all the dictionaries will be stored, .pickle extension')
+    argp.add_argument('--embeddings_file',
+                      help='file with word embeddings')
 
     args = argp.parse_args()
     config['phase'] = args.phase
@@ -41,3 +43,4 @@ def parse_arguments(config):
     config['valid_sentences_pickle'] = args.valid_sentences_pickle
     config['test_sentences_pickle'] = args.test_sentences_pickle
     config['dictionary_file'] = args.dictionary_file
+    config['embeddings_file'] = args.embeddings_file

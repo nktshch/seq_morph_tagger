@@ -3,7 +3,7 @@
     "char_embeddings_dimension": 100,
     "grammeme_embeddings_dimension": 150,
     "word_LSTM_bidirectional": true,
-    "char_LSTM_bidirectional": true,
+    "char_LSTM_bidirectional": false,
     "word_LSTM_hidden": 400,
     "char_LSTM_hidden": 150,
     "word_LSTM_input_dropout": 0.5,
@@ -18,11 +18,11 @@
     "decoder_max_iterations": 12,
     "sentence_train_batch_size": 5,
     "sentence_eval_batch_size": 5,
+    "number_of_runs": 1,
     "UNK": "$UNK$",
     "NUM": "$NUM$",
     "NONE": "O",
     "SOS": "$SOS$",
     "EOS": "$EOS$",
-    "PAD": "$PAD$",
-    "embeddings_file": "./data/cc.ru.300.bin"
+    "PAD": "$PAD$"
 }

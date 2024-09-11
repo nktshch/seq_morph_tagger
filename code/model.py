@@ -22,8 +22,6 @@ class Model(nn.Module):
         self.encoder = Encoder(self.conf, self.data)  # provides words embeddings
         self.decoder = Decoder(self.conf, self.data)
         self.grammeme_embeddings = None
-        self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
-        self.optimizer = torch.optim.SGD(self.parameters(), lr=self.conf['learning_rate'])
 
     def forward(self, words_batch, chars_batch, labels_batch):
         """Uses Encoder and Decoder to perform one pass on a sinle batch.
@@ -39,11 +37,6 @@ class Model(nn.Module):
         Returns:
             tuple: Tuple consists of predicted grammemes and their probabilities.
         """
-
-        # not sure if this is ok to switch devices like this
-        words_batch = words_batch.to(self.conf['device'])
-        chars_batch = chars_batch.to(self.conf['device'])
-        labels_batch = labels_batch.to(self.conf['device'])
 
         # shape (max_sentence_length, batch_size, grammeme_LSTM_hidden)
         encoder_hidden, encoder_cell = self.encoder(words_batch, chars_batch)
