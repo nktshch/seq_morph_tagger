@@ -1,6 +1,6 @@
 """Docstring for dataset.py."""
 
-from vocab import Vocab
+from data_preparation.vocab import Vocab
 
 from pathlib import Path
 import pickle
@@ -68,22 +68,8 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, index):
         """Returns indices of words, chars, and grammemes for a sentence with a given index."""
-        words = []
-        labels = []
-        for word in self.sentences[index]:
-            word_ids = [self.vocab.vocab["word-index"].get(word, 1)]
-            for char in word:
-                word_ids += [self.vocab.vocab["char-index"].get(char, 1)]
-            words += [word_ids]
-
-        for word in self.sentences_pyconll[index]:
-            grammeme_ids = []
-            if word.upos is not None:
-                grammeme_ids = [self.vocab.vocab["grammeme-index"]["POS=" + word.upos]]
-            grammeme_ids += [
-                self.vocab.vocab["grammeme-index"][key + "=" + feat] for key in word.feats for feat in word.feats[key]]
-            labels += [grammeme_ids]
-
+        words, labels = \
+            self.vocab.sentence_to_indices(self.sentences[index], self.sentences_pyconll[index], self.training_set)
         return words, labels
 
     def get_all_sentences(self):

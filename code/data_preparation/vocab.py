@@ -162,6 +162,28 @@ class Vocab:
         singletons = [token for token, cnt in counter.items() if cnt == 1]
         return self.get_dictionaries(singletons)
 
+    def sentence_to_indices(self, sentence, sentence_pyconll, training):
+        """Returns indices of words, chars, and grammemes for a sentence. Used by CustomDataset and in predict."""
+
+        words = []
+        labels = []
+        for word in sentence:
+            word_ids = [self.vocab["word-index"].get(word, 1)]
+            for char in word:
+                word_ids += [self.vocab["char-index"].get(char, 1)]
+            words += [word_ids]
+
+        for word in sentence_pyconll:
+            grammeme_ids = []
+            if training:
+                if word.upos is not None:
+                    grammeme_ids = [self.vocab["grammeme-index"]["POS=" + word.upos]]
+                grammeme_ids += [
+                    self.vocab["grammeme-index"][key + "=" + feat] for key in word.feats for feat in word.feats[key]]
+            labels += [grammeme_ids]
+
+        return words, labels
+
     @staticmethod
     def get_dictionaries(data):
         """
