@@ -1,6 +1,7 @@
 """Contains method that predicts word tags for raw sentences."""
 
 from trainer import collate_batch
+from model.model import Model
 
 import torch
 
@@ -16,11 +17,12 @@ def predict(sentence, model_file="models/small_model.pt"):
         model_file (string): File containing saved model parameters.
     """
 
-    model = torch.load(model_file)
+    model = Model()
+    model.load_state_dict(torch.load(model_file, weights_only=True))
     vocab = model.data.vocab
     device = model.conf['device']
 
-    words, labels = vocab.sentence_to_indices(sentence, sentence, False)
+    words, labels = vocab.sentence_to_indices(sentence, sentence)
     if [(words, labels)][0][1][0]:
         print("No")
     words, chars, labels = collate_batch([(words, labels)])

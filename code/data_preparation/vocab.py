@@ -4,6 +4,8 @@ from pathlib import Path
 import pyconll
 from collections import Counter
 import pickle
+import fasttext
+import numpy as np
 
 
 class Vocab:
@@ -22,8 +24,12 @@ class Vocab:
     
     def __init__(self, conf):
 
+        self.conf = conf
         self.train_directory = conf["train_directory"]
-        self.dictionary_file = conf["dictionary_file"]
+        self.valid_directory = conf["valid_directory"]
+        self.test_directory = conf["test_directory"]
+        self.vocab_file = conf["vocab_file"]
+        self.embeddings_file = conf["embeddings_file"]
         self.PAD = conf["PAD"]
         self.EOS = conf["EOS"]
         self.SOS = conf["SOS"]
@@ -34,27 +40,53 @@ class Vocab:
         self.dictionaries = ["word-index", "index-word", "grammeme-index", "index-grammeme", 
                              "char-index", "index-char", "singleton-index", "index-singleton"]
 
-        self.generate_dictionaries()
-                
-    def generate_dictionaries(self):
-        """
-        Loads dictionary of dictionaries (vocab["word-index"] etc.) from dictionaries.pickle or
-        creates it and saves into file.
-        """
-        
-        print("Creating vocab")
+        self.pretrained_wordforms = []
+        self.vocab_wordforms = []
+        self.pretrained_vocab = []
+        self.embeddings = None
 
-        if Path(self.dictionary_file).exists():
-            with open(self.dictionary_file, 'rb') as f:
-                self.vocab = pickle.load(f)
-                if not len(self.vocab) == len(self.dictionaries):
-                    print("File does not contain all dictionaries")
-                    self.create_vocab()
-                else:
-                    pass
-        else:
-            print("There is no file containing dictionaries")
+        self.ft = None
+
+        self.get_vocab_and_embeddings(rewrite=True)
+                
+    def get_vocab_and_embeddings(self, rewrite=False):
+        """
+        Loads dictionary of dictionaries (vocab["word-index"] etc.) and embeddings from files or
+        creates and saves them.
+
+        Args:
+            rewrite (bool, default False): Tells to rewrite vocab and embeddings even if they already exist.
+        """
+
+        if rewrite:
+            print("Rewriting vocab and embeddings")
+            self.ft = fasttext.load_model(self.conf['pretrained_embeddings'])
             self.create_vocab()
+            self.create_embeddings(self.conf['word_embeddings_dimension'])
+        else:
+            if Path(self.vocab_file).exists() and Path(self.embeddings_file).exists():
+                print("Loading vocab and embeddings from files")
+                with open(self.vocab_file, 'rb') as vf:
+                    self.vocab = pickle.load(vf)
+                with open(self.embeddings_file, 'rb') as ef:
+                    self.embeddings = np.load(ef)
+            elif Path(self.vocab_file).exists() and not Path(self.embeddings_file).exists():
+                print("Loading vocab from file and creating embeddings")
+                with open(self.vocab_file, 'rb') as vf:
+                    self.vocab = pickle.load(vf)
+                self.ft = fasttext.load_model(self.conf['pretrained_embeddings'])
+                self.create_embeddings(self.conf['word_embeddings_dimension'])
+            elif not Path(self.vocab_file).exists() and Path(self.embeddings_file).exists():
+                print("Creating vocab and loading embeddings from file")
+                with open(self.embeddings_file, 'rb') as ef:
+                    self.embeddings = np.load(ef)
+                self.ft = fasttext.load_model(self.conf['pretrained_embeddings'])
+                self.create_vocab()
+            else:
+                print("Creating vocab and embeddings")
+                self.ft = fasttext.load_model(self.conf['pretrained_embeddings'])
+                self.create_vocab()
+                self.create_embeddings(self.conf['word_embeddings_dimension'])
     
     def create_vocab(self):
         """
@@ -62,6 +94,7 @@ class Vocab:
         where element is wordform, grammeme, char, singleton.
         This function also saves it into a file via pickle package.
         """
+
         # There is no way of creating empty sentences_train variable that will allow summing itself with
         # pyconll.unit.conll.Conll object. For this reason, we first consider only the first file in the list,
         # and then add other sentences if there are any
@@ -70,35 +103,79 @@ class Vocab:
         for file in train_files[1:]:
             sentences_train = sentences_train + pyconll.load.load_from_file(file)
 
-        self.vocab["word-index"], self.vocab["index-word"] = self.get_all_wordforms(sentences_train)
+        valid_files = list(Path(self.valid_directory).iterdir())
+        sentences_valid = pyconll.load_from_file(valid_files[0])
+        for file in valid_files[1:]:
+            sentences_valid = sentences_valid + pyconll.load.load_from_file(file)
+
+        test_files = list(Path(self.test_directory).iterdir())
+        sentences_test = pyconll.load_from_file(test_files[0])
+        for file in test_files[1:]:
+            sentences_test = sentences_test + pyconll.load.load_from_file(file)
+
+        set_train = get_wordforms(sentences_train)
+        set_valid = get_wordforms(sentences_valid)
+        set_test = get_wordforms(sentences_test)
+        set_pretrained = set(map(lambda x: x.lower(), self.ft.get_words()))
+        self.pretrained_wordforms = list(set_pretrained)
+
+        # vocab contains all train words and valid and test words that have pretrained embeddings
+        set_wordforms = set_train | (set_valid & set_pretrained) | (set_test & set_pretrained)
+        self.pretrained_vocab = list((set_train | set_valid | set_test) & set_pretrained)
+        self.vocab_wordforms = [self.PAD, self.UNK] + list(set_wordforms)
+        self.vocab["word-index"], self.vocab["index-word"] = get_dictionaries(self.vocab_wordforms)
+
         self.vocab["grammeme-index"], self.vocab["index-grammeme"] = self.get_all_grammemes(sentences_train)
         self.vocab["char-index"], self.vocab["index-char"] = self.get_all_chars(sentences_train)
         self.vocab["singleton-index"], self.vocab["index-singleton"] = self.get_all_singletons(sentences_train)
         
-        with open(self.dictionary_file, 'wb') as f:
+        with open(self.vocab_file, 'wb') as f:
             pickle.dump(self.vocab, f)
-        print("Saved dictionaries")
-    
-    def get_all_wordforms(self, sentences):
-        """
-        Gets all wordforms in the dataset and creates two dictionaries:
-        one with wordform:index pairs, other with index:wordform pairs.
+        print("Saved vocab")
+
+
+    def create_embeddings(self, dimension=300):
+        """Loads embeddings and stores them in the class variable as list of ndarrays.
+
+        If a word doesn't have the embedding, it is assigned a random one using normal distribution.
 
         Args:
-            sentences (pyconll.unit.conll.Conll): All of the sentences from which to get wordforms.
-
-        Returns:
-            tuple: Dictionaries with wordform->index and index->wordform pairs.
+            file (str): The file containing fastText embeddings.
+            dimension (int, default 300): The dimension of embeddings.
         """
-                
-        wordforms = set()
-        for sentence in sentences:
-            for _, token in enumerate(sentence):
-                wordforms.add(token.form)
-        wordforms = list(wordforms)
-        wordforms = [self.PAD, self.UNK] + wordforms
-        return self.get_dictionaries(wordforms)
-    
+        self.embeddings = np.random.normal(scale=2.0 / (dimension + len(self.vocab_wordforms)),
+                                           size=(len(self.vocab_wordforms), dimension))
+
+        for word in self.pretrained_vocab:
+            self.embeddings[self.vocab["word-index"][word]] = self.ft[word]
+        print(f"{len(self.pretrained_vocab)} of {len(self.vocab_wordforms)} words from vocab had pretrained fastText embeddings")
+
+        with open(self.embeddings_file, 'wb') as f:
+            np.save(f, self.embeddings)
+        print("Saved embeddings")
+
+
+    # def get_all_wordforms(self, sentences):
+    #     """
+    #     Gets all wordforms in the dataset and creates two dictionaries:
+    #     one with wordform:index pairs, other with index:wordform pairs.
+    #
+    #     Args:
+    #         sentences (pyconll.unit.conll.Conll): All of the sentences from which to get wordforms.
+    #
+    #     Returns:
+    #         tuple: Dictionaries with wordform->index and index->wordform pairs.
+    #     """
+    #
+    #     wordforms = set()
+    #     for sentence in sentences:
+    #         for _, token in enumerate(sentence):
+    #             wordforms.add(token.form)
+    #     wordforms = list(wordforms)
+    #     wordforms = [self.PAD, self.UNK] + wordforms
+    #     return self.get_dictionaries(wordforms)
+
+
     def get_all_grammemes(self, sentences):
         """
         Gets all grammemes in the dataset and creates two dictionaries:
@@ -119,7 +196,7 @@ class Vocab:
                 grammemes.update([key + "=" + feat for key in token.feats for feat in token.feats[key]])
         grammemes = list(grammemes)
         grammemes = [self.PAD, self.SOS, self.EOS, self.UNK] + grammemes
-        return self.get_dictionaries(grammemes)
+        return get_dictionaries(grammemes)
     
     def get_all_chars(self, sentences):
         """
@@ -144,8 +221,9 @@ class Vocab:
             chars.update(words)
         chars = list(chars)
         chars = [self.PAD] + [self.UNK] + chars
-        return self.get_dictionaries(chars)
-                
+        return get_dictionaries(chars)
+
+
     def get_all_singletons(self, sentences):
         """
         Gets all singletons in the dataset and creates two dictionaries:
@@ -160,43 +238,60 @@ class Vocab:
         
         counter = Counter([token.form for sentence in sentences for _, token in enumerate(sentence)])
         singletons = [token for token, cnt in counter.items() if cnt == 1]
-        return self.get_dictionaries(singletons)
+        return get_dictionaries(singletons)
 
-    def sentence_to_indices(self, sentence, sentence_pyconll, training):
+    def sentence_to_indices(self, sentence, sentence_pyconll):
         """Returns indices of words, chars, and grammemes for a sentence. Used by CustomDataset and in predict."""
 
         words = []
         labels = []
         for word in sentence:
-            word_ids = [self.vocab["word-index"].get(word, 1)]
+            word_ids = [self.vocab["word-index"].get(word.lower(), 1)]
             for char in word:
                 word_ids += [self.vocab["char-index"].get(char, 1)]
             words += [word_ids]
 
         for word in sentence_pyconll:
             grammeme_ids = []
-            if training:
-                if word.upos is not None:
-                    grammeme_ids = [self.vocab["grammeme-index"]["POS=" + word.upos]]
-                grammeme_ids += [
-                    self.vocab["grammeme-index"][key + "=" + feat] for key in word.feats for feat in word.feats[key]]
+            if word.upos is not None:
+                grammeme_ids = [self.vocab["grammeme-index"]["POS=" + word.upos]]
+            grammeme_ids += [
+                self.vocab["grammeme-index"][key + "=" + feat] for key in word.feats for feat in word.feats[key]]
             labels += [grammeme_ids]
 
         return words, labels
 
-    @staticmethod
-    def get_dictionaries(data):
-        """
-        Create two dictionaries from list:
-        first with element:index pairs, second with index:element pairs.
 
-        Args:
-            data (list): List with elements to be turned into dictionaries.
+def get_wordforms(sentences):
+    """
+    Gets all wordforms in the dataset and returns set of them.
 
-        Returns:
-            tuple: Dictionaries with element->index and index->element pairs.
-        """
+    Args:
+        sentences (pyconll.unit.conll.Conll): All of the sentences from which to get wordforms.
 
-        stoi = {element: index for index, element in enumerate(data)}
-        itos = {index: element for index, element in enumerate(data)}
-        return stoi, itos
+    Returns:
+        set: Set of all wordforms in the dataset.
+    """
+
+    wordforms = set()
+    for sentence in sentences:
+        for _, token in enumerate(sentence):
+            wordforms.add(token.form.lower())
+    return wordforms
+
+
+def get_dictionaries(data):
+    """
+    Create two dictionaries from list:
+    first with element:index pairs, second with index:element pairs.
+
+    Args:
+        data (list): List with elements to be turned into dictionaries.
+
+    Returns:
+        tuple: Dictionaries with element->index and index->element pairs.
+    """
+
+    stoi = {element: index for index, element in enumerate(data)}
+    itos = {index: element for index, element in enumerate(data)}
+    return stoi, itos

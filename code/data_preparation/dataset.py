@@ -11,18 +11,13 @@ import fasttext
 import fasttext.util
 
 
-def main(conf):
-    # print(conf)
-    vocabulary = Vocab(conf)
-    dataset = CustomDataset(conf, vocabulary, conf['train_directory'], sentences_pickle="example_set.pickle")
-
-    print(f"length of word-index dict: {len(dataset.vocab.vocab['word-index'])}")
-    print(f"length of grammeme-index dict: {len(dataset.vocab.vocab['grammeme-index'])}")
-    print(f"length of char-index dict: {len(dataset.vocab.vocab['char-index'])}")
-
-    # we assume that we know grammemes and other stuff if we work with dataset
-    # if we don't, we have to handle them separately in a different method -  function predict() that
-    # doesn't use CustomDataset
+# def main(conf):
+#     vocabulary = Vocab(conf)
+#     dataset = CustomDataset(conf, vocabulary, conf['train_directory'], sentences_pickle="example_set.pickle")
+#
+#     print(f"length of word-index dict: {len(dataset.vocab.vocab['word-index'])}")
+#     print(f"length of grammeme-index dict: {len(dataset.vocab.vocab['grammeme-index'])}")
+#     print(f"length of char-index dict: {len(dataset.vocab.vocab['char-index'])}")
 
 
 class CustomDataset(Dataset):
@@ -48,18 +43,16 @@ class CustomDataset(Dataset):
         >>> print(dataset.vocab.vocab["index-word"][dataset[66][0][8][0]])
     """
 
-    def __init__(self, conf, vocab, directory, sentences_pickle=None, training_set=True):
+    def __init__(self, conf, vocab, directory, sentences_pickle=None):
         self.conf = conf
         self.vocab = vocab
         self.directory = directory
         self.sentences_pickle = sentences_pickle
-        self.training_set = training_set
         self.sentences_pyconll = None
         self.sentences = []
         self.get_all_sentences()
-        if training_set:
-            self.embeddings = []
-            self.get_all_embeddings(self.conf["embeddings_file"], dimension=self.conf['word_embeddings_dimension'])
+        # self.embeddings = []
+        # self.get_all_embeddings(self.conf["embeddings_file"], dimension=self.conf['word_embeddings_dimension'])
 
     def __len__(self):
         """Returns the number of sentences in dataset."""
@@ -69,7 +62,7 @@ class CustomDataset(Dataset):
     def __getitem__(self, index):
         """Returns indices of words, chars, and grammemes for a sentence with a given index."""
         words, labels = \
-            self.vocab.sentence_to_indices(self.sentences[index], self.sentences_pyconll[index], self.training_set)
+            self.vocab.sentence_to_indices(self.sentences[index], self.sentences_pyconll[index])
         return words, labels
 
     def get_all_sentences(self):
@@ -106,31 +99,3 @@ class CustomDataset(Dataset):
             for word in sentence:
                 words += [word.form]
             self.sentences += [words]
-
-    def get_all_embeddings(self, file, dimension=300):
-        """Loads embeddings from file and stores them in the class variable as list of ndarrays.
-
-        If a word doesn't have the embedding, it is assigned a random one using normal distribution.
-
-        Args:
-            file (str): The file containing fastText embeddings.
-            dimension (int, default 300): The dimension of embeddings.
-        """
-
-        print("Loading fastText embeddings")
-
-        # fastText takes a lot of time to load embeddings (maybe there is no problem because we only load them once)
-        assert Path(file).exists(), f"There is no file containing embeddings {file}"
-
-        ft = fasttext.load_model(file)
-
-        # the author of the original code has this scale
-        self.embeddings = np.random.normal(scale=2.0 / (dimension + len(self.vocab.vocab['word-index'])),
-                                           size=(len(self.vocab.vocab['word-index']), dimension))
-
-        total = 0
-        for word in ft.get_words():
-            if word in self.vocab.vocab["word-index"].keys():
-                total += 1
-                self.embeddings[self.vocab.vocab["word-index"][word]] = ft[word]
-        print(f"{total} of {len(self.vocab.vocab['word-index'])} words had pretrained fastText embeddings")

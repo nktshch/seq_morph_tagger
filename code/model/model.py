@@ -12,15 +12,15 @@ class Model(nn.Module):
 
     Args:
         conf (dict): Dictionary with configuration parameters.
-        data (CustomDataset): Instance of class containing dataset.
+        vocab (Vocab): Instance of class containing vocab.
     """
 
-    def __init__(self, conf, data):
+    def __init__(self, conf, vocab):
         super().__init__()
         self.conf = conf
-        self.data = data
-        self.encoder = Encoder(self.conf, self.data)  # provides words embeddings
-        self.decoder = Decoder(self.conf, self.data)
+        self.vocab = vocab
+        self.encoder = Encoder(self.conf, self.vocab)  # provides words embeddings
+        self.decoder = Decoder(self.conf, self.vocab)
 
     def forward(self, words_batch, chars_batch, labels_batch=None):
         """Uses Encoder and Decoder to perform one pass on a sinle batch.
@@ -44,8 +44,3 @@ class Model(nn.Module):
         predictions, probabilities = self.decoder(decoder_hidden, decoder_cell, labels_batch)
 
         return predictions, probabilities
-
-
-# if __name__ == "__main__":
-#     configurate()
-#     main(config)

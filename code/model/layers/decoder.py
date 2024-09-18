@@ -11,22 +11,22 @@ class Decoder(nn.Module):
 
     Args:
         conf (dict): Dictionary with configuration parameters.
-        data (CustomDataset): Class instance from dataset.py.
+        vocab (Vocab): Class instance from vocab.py.
         sos_id (int, default 1): The id of the sos (start of sequence) token. Should be 1.
     """
 
-    def __init__(self, conf, data, sos_id=1):
+    def __init__(self, conf, vocab, sos_id=1):
         super().__init__()
         self.conf = conf
-        self.data = data
+        self.vocab = vocab
         self.sos_id = sos_id
-        self.grammeme_embeddings = nn.Embedding(len(data.vocab.vocab['grammeme-index']),
+        self.grammeme_embeddings = nn.Embedding(len(self.vocab.vocab['grammeme-index']),
                                                 self.conf["grammeme_embeddings_dimension"])
         self.grammemeLSTMcell = nn.LSTMCell(input_size=self.conf['grammeme_embeddings_dimension'],
                                             hidden_size=self.conf['grammeme_LSTM_hidden'])
         self.grammemeDropout = nn.Dropout(p=self.conf['grammeme_LSTM_input_dropout'])
         self.linear = nn.Linear(in_features=self.conf['grammeme_LSTM_hidden'],
-                                out_features=len(data.vocab.vocab['grammeme-index']))
+                                out_features=len(self.vocab.vocab['grammeme-index']))
 
     def forward(self, decoder_hidden, decoder_cell, labels_batch=None):
         """Takes batches of hidden and cell states produced by Encoder as the initial states for the LSTM.

@@ -12,7 +12,7 @@
     "grammeme_LSTM_input_dropout": 0.5,
     "clip": 5,
     "learning_rate": 1.0,
-    "max_epochs": 5,
+    "max_epochs": 2,
     "no_improv": 50,
     "bucket_train_data": true,
     "decoder_max_iterations": 12,

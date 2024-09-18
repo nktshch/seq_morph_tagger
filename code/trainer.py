@@ -21,22 +21,22 @@ class Trainer(nn.Module):
             If float, should be between 0 and 1, treated as the proportion of the dataset used during training.
     """
 
-    def __init__(self, conf, model, valid_data, test_data, run_number=0, subset_size=0):
+    def __init__(self, conf, model, train_data, valid_data, test_data, run_number=0, subset_size=0):
         super().__init__()
         self.conf = conf
         self.model = model
-        self.vocab = model.data.vocab
+        self.vocab = model.vocab
 
         if subset_size == 0:
-            train_subset = self.model.data
+            train_subset = train_data
             valid_subset = valid_data
             test_subset = test_data
         elif isinstance(subset_size, int) and subset_size > 0:
-            train_subset = subset_from_dataset(self.model.data, subset_size)
+            train_subset = subset_from_dataset(train_data, subset_size)
             valid_subset = subset_from_dataset(valid_data, subset_size)
             test_subset = subset_from_dataset(test_data, subset_size)
         elif isinstance(subset_size, float) and 0.0 < subset_size < 1.0:
-            train_subset = subset_from_dataset(self.model.data, int(subset_size * len(self.model.data)))
+            train_subset = subset_from_dataset(train_data, int(subset_size * len(train_data)))
             valid_subset = subset_from_dataset(valid_data, int(subset_size * len(valid_data)))
             test_subset = subset_from_dataset(test_data, int(subset_size * len(test_data)))
         else:
@@ -81,7 +81,7 @@ class Trainer(nn.Module):
             else:
                 self.no_improv = 0
                 self.best_loss = valid_loss
-                torch.save(self.model, self.conf['model'])  # put the path elsewhere and create folder if necessary
+                torch.save(self.model.state_dict(), self.conf['model'])  # put the path elsewhere and create folder if necessary
             self.current_epoch += 1
 
     def train_epoch(self):
@@ -123,10 +123,9 @@ class Trainer(nn.Module):
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
             words_batch = words_batch.to(self.conf['device'])
             chars_batch = chars_batch.to(self.conf['device'])
-            if labels_batch:
-                labels_batch = labels_batch.to(self.conf['device'])
+            labels_batch = labels_batch.to(self.conf['device'])
 
-            predictions, probabilities = self.model(words_batch, chars_batch, labels_batch)
+            predictions, probabilities = self.model(words_batch, chars_batch, None)
             targets = labels_batch[1:]  # slice is taken to ignore SOS token
             probabilities = probabilities[:len(targets)]
 
@@ -146,6 +145,7 @@ class Trainer(nn.Module):
                                (self.current_epoch + 1) * len(self.valid_loader))
         return valid_accuracy, valid_loss
 
+    # remove or rewrite
     def test_epoch(self):
         self.model.eval()
 
@@ -155,8 +155,7 @@ class Trainer(nn.Module):
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
             words_batch = words_batch.to(self.conf['device'])
             chars_batch = chars_batch.to(self.conf['device'])
-            if labels_batch:
-                labels_batch = labels_batch.to(self.conf['device'])
+            labels_batch = labels_batch.to(self.conf['device'])
 
             predictions, probabilities = self.model(words_batch, chars_batch, labels_batch)
             targets = labels_batch[1:]  # slice is taken to ignore SOS token
