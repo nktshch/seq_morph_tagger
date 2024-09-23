@@ -10,6 +10,8 @@ import json
 import torch
 from torch import cuda
 import numpy as np
+import random
+import copy
 
 
 def parse_arguments():
@@ -19,8 +21,8 @@ def parse_arguments():
     argp.add_argument('config', help='json file containing configurations parameters')
     argp.add_argument('phase', help='train, test')
     argp.add_argument('train_directory', help='directory containing files with training data, they should be .conllu')
-    argp.add_argument('valid_directory', help='directory containing files with validation data, they should be .conllu')
-    argp.add_argument('test_directory', help='directory containing files with testing data, they should be .conllu')
+    argp.add_argument('--valid_directory', help='directory containing files with validation data, they should be .conllu')
+    argp.add_argument('--test_directory', help='directory containing files with testing data, they should be .conllu')
     argp.add_argument('--model', help='file to save model to')
     argp.add_argument('--train_sentences_pickle',
                       help='file for (or containing) preloaded CoNLL-U training data, .pickle extension')
@@ -28,10 +30,6 @@ def parse_arguments():
                       help='file for (or containing) preloaded CoNLL-U validation data, .pickle extension')
     argp.add_argument('--test_sentences_pickle',
                       help='file for (or containing) preloaded CoNLL-U testing data, .pickle extension')
-    argp.add_argument('--vocab_file',
-                      help='file where all the dictionaries will be stored, .pickle extension')
-    argp.add_argument('--embeddings_file',
-                      help='file where all the embeddings will be stored, .npy extension')
     argp.add_argument('--pretrained_embeddings',
                       help='file with word embeddings (fastText), .bin extension. If embeddings_file is not provided,'
                            'this must be.')
@@ -49,8 +47,6 @@ def parse_arguments():
     config['train_sentences_pickle'] = args.train_sentences_pickle
     config['valid_sentences_pickle'] = args.valid_sentences_pickle
     config['test_sentences_pickle'] = args.test_sentences_pickle
-    config['vocab_file'] = args.vocab_file
-    config['embeddings_file'] = args.embeddings_file
     config['pretrained_embeddings'] = args.pretrained_embeddings
 
     config['device'] = 'cuda' if cuda.is_available() else 'cpu'
@@ -67,21 +63,33 @@ def main():
     # for key in conf:
     #     print(f"{key} : {conf[key]}")
 
+    vocab = Vocab(conf)
+
+    train_data = CustomDataset(conf, vocab, conf['train_directory'],
+                               sentences_pickle=conf['train_sentences_pickle'])
+
+    if vocab.set_valid:
+        valid_data = CustomDataset(conf, vocab, conf['valid_directory'],
+                                   sentences_pickle=conf['valid_sentences_pickle'])
+    else:
+        valid_data = None
+
+    if vocab.set_test:
+        test_data = CustomDataset(conf, vocab, conf['test_directory'],
+                                  sentences_pickle=conf['test_sentences_pickle'])
+    else:
+        test_data = None
+
     print(f"Training model {conf['number_of_runs']} time(s)")
     for run_number in range(conf['number_of_runs']):
         torch.backends.cudnn.deterministic = True
         torch.random.manual_seed(run_number)
         cuda.manual_seed(run_number)
         np.random.seed(run_number)
+        random.seed(run_number)
 
-        vocabulary = Vocab(conf)
-        train_data = CustomDataset(conf, vocabulary, conf['train_directory'],
-                                   sentences_pickle=conf['train_sentences_pickle'])
-        valid_data = CustomDataset(conf, vocabulary, conf['valid_directory'],
-                                   sentences_pickle=conf['valid_sentences_pickle'])
-        test_data = CustomDataset(conf, vocabulary, conf['test_directory'],
-                                  sentences_pickle=conf['test_sentences_pickle'])
-        model = Model(conf, vocabulary).to(conf['device'])
+        vocab.create_embeddings(dimension=conf['word_embeddings_dimension'])
+        model = Model(conf, vocab).to(conf['device'])
         trainer = Trainer(conf, model, train_data, valid_data, test_data,
                           run_number=run_number, subset_size=10).to(conf['device'])
         trainer.epoch_loops()

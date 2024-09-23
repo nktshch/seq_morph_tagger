@@ -5,11 +5,7 @@ from data_preparation.vocab import Vocab
 from pathlib import Path
 import pickle
 import pyconll
-import numpy as np
 from torch.utils.data import Dataset
-import fasttext
-import fasttext.util
-
 
 # def main(conf):
 #     vocabulary = Vocab(conf)
@@ -51,8 +47,6 @@ class CustomDataset(Dataset):
         self.sentences_pyconll = None
         self.sentences = []
         self.get_all_sentences()
-        # self.embeddings = []
-        # self.get_all_embeddings(self.conf["embeddings_file"], dimension=self.conf['word_embeddings_dimension'])
 
     def __len__(self):
         """Returns the number of sentences in dataset."""
@@ -72,13 +66,13 @@ class CustomDataset(Dataset):
         Also, stores the sentences as list of lists of words (strings).
         """
 
-        print("Loading sentences for dataset")
         if self.sentences_pickle is not None:
             if Path(self.sentences_pickle).exists():
+                print(f"Loading sentences for dataset from {self.sentences_pickle}")
                 with open(self.sentences_pickle, 'rb') as f:
                     self.sentences_pyconll = pickle.load(f)
             else:
-                print(f"{self.sentences_pickle} does not exist")
+                print(f"Loading sentences for dataset from {self.directory} and saving to {self.sentences_pickle}")
                 files = list(Path(self.directory).iterdir())
                 self.sentences_pyconll = pyconll.load.load_from_file(files[0])
                 for file in files[1:]:
@@ -86,14 +80,16 @@ class CustomDataset(Dataset):
 
                 with open(self.sentences_pickle, 'wb') as f:
                     pickle.dump(self.sentences_pyconll, f)
-                    print(f"Saved sentences to {self.sentences_pickle}")
+                    print(f"Saved sentences")
         else:
-            print(".pickle file was not provided")
+            print(f"Loading sentences for dataset from {self.directory}")
             files = list(Path(self.directory).iterdir())
             self.sentences_pyconll = pyconll.load.load_from_file(files[0])
             for file in files[1:]:
                 self.sentences_pyconll = self.sentences_pyconll + self.load.load_from_file(file)
 
+        # notice that self.sentences contains words with capitalization
+        # it will be ignored later when __getitem__ is called
         for sentence in self.sentences_pyconll:
             words = []
             for word in sentence:

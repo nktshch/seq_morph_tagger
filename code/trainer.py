@@ -49,9 +49,9 @@ class Trainer(nn.Module):
                                        collate_fn=collate_batch,
                                        sampler=sampler)
         self.valid_loader = DataLoader(valid_subset, batch_size=self.conf['sentence_eval_batch_size'],
-                                       collate_fn=collate_batch)
+                                       collate_fn=collate_batch) if valid_subset else []
         self.test_loader = DataLoader(test_subset, batch_size=self.conf['sentence_eval_batch_size'],
-                                      collate_fn=collate_batch)
+                                      collate_fn=collate_batch) if test_subset else []
 
         self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
         self.optimizer = torch.optim.SGD(self.parameters(), lr=self.conf['learning_rate'])
@@ -63,26 +63,30 @@ class Trainer(nn.Module):
         self.best_loss = torch.inf
         self.no_improv = 0
 
-    def epoch_loops(self):
         print(f"{len(self.train_loader)} batches in train")
         print(f"{len(self.valid_loader)} batches in valid")
         print(f"{len(self.test_loader)} batches in test")
 
+
+    def epoch_loops(self):
         for epoch in range(self.conf['max_epochs']):
             self.train_epoch()
-            valid_accuracy, valid_loss = self.valid_epoch()
-            print(f"valid accuracy at epoch {self.current_epoch}: {valid_accuracy}")
-            print(f"valid loss: {valid_loss}")
-            if valid_loss >= self.best_loss:
-                self.no_improv += 1
-                if self.no_improv >= self.conf['no_improv']:
-                    print(f"No improvement for {self.conf['no_improv']} epochs, stopping early")
-                    break
-            else:
-                self.no_improv = 0
-                self.best_loss = valid_loss
-                torch.save(self.model.state_dict(), self.conf['model'])  # put the path elsewhere and create folder if necessary
-            self.current_epoch += 1
+
+            if len(self.valid_loader) > 0:
+                valid_accuracy, valid_loss = self.valid_epoch()
+                print(f"valid accuracy at epoch {self.current_epoch}: {valid_accuracy}")
+                print(f"valid loss: {valid_loss}")
+                if valid_loss >= self.best_loss:
+                    self.no_improv += 1
+                    if self.no_improv >= self.conf['no_improv']:
+                        print(f"No improvement for {self.conf['no_improv']} epochs, stopping early")
+                        break
+                else:
+                    self.no_improv = 0
+                    self.best_loss = valid_loss
+                    torch.save(self.model.state_dict(), self.conf['model'])  # put the path elsewhere and create folder if necessary
+                self.current_epoch += 1
+
 
     def train_epoch(self):
         self.model.train()
@@ -113,11 +117,12 @@ class Trainer(nn.Module):
 
         # print("One train epoch complete")
 
+
     def valid_epoch(self):
         self.model.eval()
 
         # code similar to train_epoch
-        progress_bar = tqdm(enumerate(self.valid_loader), total=len(self.valid_loader))
+        progress_bar = tqdm(enumerate(self.valid_loader), total=len(self.valid_loader), colour='#bbbbff')
         running_error = 0.0
         correct, total = 0, 0
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
@@ -145,30 +150,6 @@ class Trainer(nn.Module):
                                (self.current_epoch + 1) * len(self.valid_loader))
         return valid_accuracy, valid_loss
 
-    # remove or rewrite
-    def test_epoch(self):
-        self.model.eval()
-
-        # code similar to train_epoch
-        progress_bar = tqdm(enumerate(self.test_loader), total=len(self.test_loader))
-        correct, total = 0, 0
-        for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
-            words_batch = words_batch.to(self.conf['device'])
-            chars_batch = chars_batch.to(self.conf['device'])
-            labels_batch = labels_batch.to(self.conf['device'])
-
-            predictions, probabilities = self.model(words_batch, chars_batch, labels_batch)
-            targets = labels_batch[1:]  # slice is taken to ignore SOS token
-
-            correct_batch, total_batch = calculate_accuracy(self.vocab, self.conf, predictions, targets)
-            correct += correct_batch
-            total += total_batch
-        test_accuracy = correct / total
-        self.writer.add_scalar("test accuracy",
-                               test_accuracy,
-                               (self.current_epoch + 1) * len(self.valid_loader))
-        return test_accuracy
-
 
 def calculate_accuracy(vocabulary, conf, predictions, targets):
     """Metrics is a ratio of correctly predicted tags to total number of tags.
@@ -188,7 +169,7 @@ def calculate_accuracy(vocabulary, conf, predictions, targets):
     return n_correct, n_total
 
 
-def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2):  # do all preprocessing here
+def collate_batch(batch, pad_id=0, sos_id=1, eos_id=2):
     """Takes batch created with CustomDataset and performs padding.
 
     batch consists of indices of words, chars, and labels (grammemes). The returned batches are tensors.
@@ -263,7 +244,8 @@ def collate_labels(batch, max_sentence_length, pad_id=0, sos_id=1, eos_id=2):
 
 def subset_from_dataset(data, n):
     """Outputs first n entries from data (type Dataset) as another dataset."""
-    return Subset(data, range(n))
+    subset = Subset(data, range(n)) if data else None
+    return subset
 
 
 def masked_select(a, value):
