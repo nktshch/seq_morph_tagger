@@ -54,98 +54,20 @@ class Vocab:
             print("Creating vocab")
             self.create_vocab()
 
-    # def get_sets(self):
-    #     """
-    #     Creates sets of wordforms that are in train, valid, and test sets.
-    #     Also, gets all words that are in fastText library. All words are lowercase.
-    #     """
-    #
-    #     if not Path(self.conf["train_directory"]).is_dir() or not any(Path(self.conf["train_directory"]).iterdir()):
-    #         raise NotADirectoryError(f"{self.conf['train_directory']} is not a valid directory for training files")
-    #
-    #     # There is no way of creating empty sentences_train variable that will allow summing itself with
-    #     # pyconll.unit.conll.Conll object. For this reason, we first consider only the first file in the list,
-    #     # and then add other sentences if there are any
-    #     train_files = list(Path(self.conf["train_directory"]).iterdir())
-    #     self.sentences_train = pyconll.load_from_file(train_files[0])
-    #     for file in train_files[1:]:
-    #         self.sentences_train = self.sentences_train + pyconll.load.load_from_file(file)
-    #
-    #     if Path(self.conf["valid_directory"]).is_dir():
-    #         valid_files = list(Path(self.conf["valid_directory"]).iterdir())
-    #         if valid_files:
-    #             sentences_valid = pyconll.load_from_file(valid_files[0])
-    #             for file in valid_files[1:]:
-    #                 sentences_valid = sentences_valid + pyconll.load.load_from_file(file)
-    #         else:
-    #             sentences_valid = []
-    #     else:
-    #         sentences_valid = []
-    #
-    #     if Path(self.conf["test_directory"]).is_dir():
-    #         test_files = list(Path(self.conf["test_directory"]).iterdir())
-    #         if test_files:
-    #             sentences_test = pyconll.load_from_file(test_files[0])
-    #             for file in test_files[1:]:
-    #                 sentences_test = sentences_test + pyconll.load.load_from_file(file)
-    #         else:
-    #             sentences_test = []
-    #     else:
-    #         sentences_test = []
-    #
-    #     # lines below create sets of all words present in corresponding datasets
-    #     # usage of lowercase is hardcoded, it is not an option
-    #     self.set_train = self.get_all_wordforms(self.sentences_train)
-    #     self.set_valid = self.get_all_wordforms(sentences_valid)
-    #     self.set_test = self.get_all_wordforms(sentences_test)
-    #
-    #     print("Loading pretrained embeddings")
-    #     self.ft = fasttext.load_model(self.conf['pretrained_embeddings'])
-    #     self.set_pretrained = set(map(lambda x: x.lower(), self.ft.get_words()))
-    #
-    #     # these are words that are in vocab and have pretrained embeddings
-    #     self.pretrained_vocab_wordforms = list(self.set_train & self.set_pretrained)
-    #
-    #     print(f"{len(self.pretrained_vocab_wordforms)} of {len(self.vocab_wordforms)} words from vocab have pretrained fastText embeddings")
-
     def create_vocab(self):
         """
         Creates dictionary Vocab.vocab of dictionaries {index:element} and {element:index}
         where element can be wordform, grammeme, char or singleton.
         """
 
-        if not Path(self.conf["train_directory"]).is_dir() or not any(Path(self.conf["train_directory"]).iterdir()):
-            raise NotADirectoryError(f"{self.conf['train_directory']} is not a valid directory for training files")
+        assert self.conf['train_files'], f"Directory {self.conf['directory']} doesn't contain train files!"
 
         # There is no way of creating empty sentences_train variable that will allow summing itself with
         # pyconll.unit.conll.Conll object. For this reason, we first consider only the first file in the list,
         # and then add other sentences if there are any
-        train_files = list(Path(self.conf["train_directory"]).iterdir())
-        self.sentences_train = pyconll.load_from_file(train_files[0])
-        for file in train_files[1:]:
+        self.sentences_train = pyconll.load_from_file(self.conf['train_files'][0])
+        for file in self.conf['train_files'][1:]:
             self.sentences_train = self.sentences_train + pyconll.load.load_from_file(file)
-
-        # if Path(self.conf["valid_directory"]).is_dir():
-        #     valid_files = list(Path(self.conf["valid_directory"]).iterdir())
-        #     if valid_files:
-        #         sentences_valid = pyconll.load_from_file(valid_files[0])
-        #         for file in valid_files[1:]:
-        #             sentences_valid = sentences_valid + pyconll.load.load_from_file(file)
-        #     else:
-        #         sentences_valid = []
-        # else:
-        #     sentences_valid = []
-        #
-        # if Path(self.conf["test_directory"]).is_dir():
-        #     test_files = list(Path(self.conf["test_directory"]).iterdir())
-        #     if test_files:
-        #         sentences_test = pyconll.load_from_file(test_files[0])
-        #         for file in test_files[1:]:
-        #             sentences_test = sentences_test + pyconll.load.load_from_file(file)
-        #     else:
-        #         sentences_test = []
-        # else:
-        #     sentences_test = []
 
         self.vocab["word-index"], self.vocab["index-word"] = self.get_all_wordforms(self.sentences_train)
         self.vocab["grammeme-index"], self.vocab["index-grammeme"] = self.get_all_grammemes(self.sentences_train)
@@ -154,7 +76,7 @@ class Vocab:
         
         with open(self.conf["vocab_file"], 'wb') as f:
             pickle.dump(self.vocab, f)
-        print("Saved vocab")
+        print(f"Saved vocab at {self.conf['vocab_file']}")
 
     def create_embeddings(self, dimension=300):
         """Loads embeddings and stores them in the class variable as list of ndarrays.

@@ -22,16 +22,10 @@ class CustomDataset(Dataset):
     Args:
         conf (dict): Dictionary with configuration parameters.
         vocab (Vocab): Instance of class containing vocabulary.
-        directory (string): Directory containing .conllu files. This parameter is used only if there is no .pickle file
-            containing sentences.
-        sentences_pickle (str, default None): Path to the .pickle file with sentences.
-            If the file does not exist, class creates it. If None, does not save sentences in a file.
-        training_set (bool, default True): Flag to show whether this is a training dataset. Creation of the embeddings
-            depends on this.
+        files (list): List of .conllu files strings.
 
     Attributes:
         vocab: Vocabulary created in vocab.py.
-        embeddings: For training set, contains embeddings.
         sentences: List of lists of strings. Raw sentences.
 
     Examples:
@@ -39,11 +33,10 @@ class CustomDataset(Dataset):
         >>> print(dataset.vocab.vocab["index-word"][dataset[66][0][8][0]])
     """
 
-    def __init__(self, conf, vocab, directory, sentences_pickle=None):
+    def __init__(self, conf, vocab, files):
         self.conf = conf
         self.vocab = vocab
-        self.directory = directory
-        self.sentences_pickle = sentences_pickle
+        self.files = files
         self.sentences_pyconll = None
         self.sentences = []
         self.get_all_sentences()
@@ -60,33 +53,15 @@ class CustomDataset(Dataset):
         return words, labels
 
     def get_all_sentences(self):
-        """Loads sentences from their .pickle file, if it exists.
-
-        Otherwise, loads them from .conllu files and stores in .pickle file, if it is given as arguments.
-        Also, stores the sentences as list of lists of words (strings).
+        """
+        Loads sentences from .conllu files and stores them as pyconll sentences in self.sentences_pyconll
+        and as lists of strings in self.sentences.
         """
 
-        if self.sentences_pickle is not None:
-            if Path(self.sentences_pickle).exists():
-                print(f"Loading sentences for dataset from {self.sentences_pickle}")
-                with open(self.sentences_pickle, 'rb') as f:
-                    self.sentences_pyconll = pickle.load(f)
-            else:
-                print(f"Loading sentences for dataset from {self.directory} and saving to {self.sentences_pickle}")
-                files = list(Path(self.directory).iterdir())
-                self.sentences_pyconll = pyconll.load.load_from_file(files[0])
-                for file in files[1:]:
-                    self.sentences_pyconll = self.sentences_pyconll + self.load.load_from_file(file)
-
-                with open(self.sentences_pickle, 'wb') as f:
-                    pickle.dump(self.sentences_pyconll, f)
-                    print(f"Saved sentences")
-        else:
-            print(f"Loading sentences for dataset from {self.directory}")
-            files = list(Path(self.directory).iterdir())
-            self.sentences_pyconll = pyconll.load.load_from_file(files[0])
-            for file in files[1:]:
-                self.sentences_pyconll = self.sentences_pyconll + self.load.load_from_file(file)
+        print(f"Loading sentences for dataset")
+        self.sentences_pyconll = pyconll.load.load_from_file(self.files[0])
+        for file in self.files[1:]:
+            self.sentences_pyconll = self.sentences_pyconll + self.load.load_from_file(file)
 
         # notice that self.sentences contains words with capitalization
         # it will be ignored later when __getitem__ is called

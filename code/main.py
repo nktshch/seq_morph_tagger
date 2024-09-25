@@ -21,17 +21,7 @@ def parse_arguments():
     argp = argparse.ArgumentParser()
     argp.add_argument('config', help='json file containing configurations parameters')
     argp.add_argument('phase', help='train, test')
-    argp.add_argument('vocab_file', help='file with vocabulary, .pickle extension')
-    argp.add_argument('train_directory', help='directory containing files with training data, they should be .conllu')
-    argp.add_argument('--valid_directory', help='directory containing files with validation data, they should be .conllu')
-    argp.add_argument('--test_directory', help='directory containing files with testing data, they should be .conllu')
-    argp.add_argument('--model', help='file to save model to')
-    argp.add_argument('--train_sentences_pickle',
-                      help='file for (or containing) preloaded CoNLL-U training data, .pickle extension')
-    argp.add_argument('--valid_sentences_pickle',
-                      help='file for (or containing) preloaded CoNLL-U validation data, .pickle extension')
-    argp.add_argument('--test_sentences_pickle',
-                      help='file for (or containing) preloaded CoNLL-U testing data, .pickle extension')
+    argp.add_argument('directory', help='Directory with all files used for training. Must contain train conllu files')
     argp.add_argument('--pretrained_embeddings',
                       help='file with word embeddings (fastText), .bin extension. If embeddings_file is not provided,'
                            'this must be.')
@@ -42,20 +32,19 @@ def parse_arguments():
         config = json.load(json_file)
 
     config['phase'] = args.phase
-    config['vocab_file'] = args.vocab_file
-    config['train_directory'] = args.train_directory
-    config['valid_directory'] = args.valid_directory
-    config['test_directory'] = args.test_directory
-    config['model'] = args.model
-    config['train_sentences_pickle'] = args.train_sentences_pickle
-    config['valid_sentences_pickle'] = args.valid_sentences_pickle
-    config['test_sentences_pickle'] = args.test_sentences_pickle
+    config['directory'] = args.directory
     config['pretrained_embeddings'] = args.pretrained_embeddings
 
     config['device'] = 'cuda' if cuda.is_available() else 'cpu'
     config['word_LSTM_directions'] = 1 + int(config['word_LSTM_bidirectional'])
     config['char_LSTM_directions'] = 1 + int(config['char_LSTM_bidirectional'])
     config['grammeme_LSTM_hidden'] = config['word_LSTM_directions'] * config['word_LSTM_hidden']
+
+    config['train_files'] = list(map(lambda x: x.relative_to('.'), Path(config['directory']).glob("*train*.conllu")))
+    config['valid_files'] = list(map(lambda x: x.relative_to('.'), Path(config['directory']).glob("*dev*.conllu")))
+    config['test_files'] = list(map(lambda x: x.relative_to('.'), Path(config['directory']).glob("*test*.conllu")))
+    config['vocab_file'] = config['directory'] + "/vocab.pickle"
+    config['model_name'] = "tiny_model"
 
     return config
 
@@ -68,18 +57,15 @@ def main():
 
     vocab = Vocab(conf)
 
-    train_data = CustomDataset(conf, vocab, conf['train_directory'],
-                               sentences_pickle=conf['train_sentences_pickle'])
+    train_data = CustomDataset(conf, vocab, conf['train_files'])
 
-    if Path(conf["valid_directory"]).is_dir() and list(Path(conf["valid_directory"]).iterdir()):
-        valid_data = CustomDataset(conf, vocab, conf['valid_directory'],
-                                   sentences_pickle=conf['valid_sentences_pickle'])
+    if conf['valid_files']:
+        valid_data = CustomDataset(conf, vocab, conf['valid_files'])
     else:
         valid_data = None
 
-    if Path(conf["test_directory"]).is_dir() and list(Path(conf["test_directory"]).iterdir()):
-        test_data = CustomDataset(conf, vocab, conf['test_directory'],
-                                  sentences_pickle=conf['test_sentences_pickle'])
+    if conf['test_files']:
+        test_data = CustomDataset(conf, vocab, conf['test_files'])
     else:
         test_data = None
 
