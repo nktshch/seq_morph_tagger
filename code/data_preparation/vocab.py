@@ -8,6 +8,19 @@ import fasttext
 import numpy as np
 
 
+def get_vocab(conf, rewrite=False):
+    if rewrite:
+        print("Rewriting vocab")
+        return Vocab(conf)
+    elif Path(conf["vocab_file"]).exists():
+        print("Loading vocab from file")
+        with open(conf["vocab_file"], 'rb') as vf:
+            return pickle.load(vf)
+    else:
+        print("Creating vocab")
+        return Vocab(conf)
+
+
 class Vocab:
     """Contains dictionary of dictionaries and embeddings of wordforms.
 
@@ -31,28 +44,12 @@ class Vocab:
         self.vocab = {} # dictionary of dictionaries, main object of the class
 
         self.sentences_train = None
-        self.embeddings = None
 
-        # self.get_sets()
-        self.get_vocab(rewrite=False)
-                
-    def get_vocab(self, rewrite=False):
-        """ Loads dictionary of dictionaries (vocab["word-index"] etc.) from file or creates and saves it.
-
-        Args:
-            rewrite (bool, default False): Tells to rewrite vocab even if it already exists.
-        """
-
-        if rewrite:
-            print("Rewriting vocab")
-            self.create_vocab()
-        elif Path(self.conf["vocab_file"]).exists():
-            print("Loading vocab from file")
-            with open(self.conf["vocab_file"], 'rb') as vf:
-                self.vocab = pickle.load(vf)
-        else:
-            print("Creating vocab")
-            self.create_vocab()
+        self.create_vocab()
+        self.embeddings = np.ndarray((len(self.vocab['word-index']), self.conf['word_embeddings_dimension']))
+        with open(self.conf["vocab_file"], 'wb+') as f:
+            pickle.dump(self, f)
+        print(f"Saved vocab at {self.conf['vocab_file']}")
 
     def create_vocab(self):
         """
@@ -73,10 +70,6 @@ class Vocab:
         self.vocab["grammeme-index"], self.vocab["index-grammeme"] = self.get_all_grammemes(self.sentences_train)
         self.vocab["char-index"], self.vocab["index-char"] = self.get_all_chars(self.sentences_train)
         self.vocab["singleton-index"], self.vocab["index-singleton"] = self.get_all_singletons(self.sentences_train)
-        
-        with open(self.conf["vocab_file"], 'wb') as f:
-            pickle.dump(self.vocab, f)
-        print(f"Saved vocab at {self.conf['vocab_file']}")
 
     def create_embeddings(self, dimension=300):
         """Loads embeddings and stores them in the class variable as list of ndarrays.

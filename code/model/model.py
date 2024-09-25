@@ -20,7 +20,7 @@ class Model(nn.Module):
         self.conf = conf
         self.vocab = vocab
 
-        self.encoder = Encoder(self.conf, self.vocab, self.vocab.embeddings)
+        self.encoder = Encoder(self.conf, self.vocab)
         self.decoder = Decoder(self.conf, self.vocab)
 
     def forward(self, words_batch, chars_batch, labels_batch=None):

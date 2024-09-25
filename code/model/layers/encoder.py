@@ -18,11 +18,11 @@ class Encoder(nn.Module):
         vocab (Vocab): Class instance from vocab.py.
     """
 
-    def __init__(self, conf, vocab, embeddings):
+    def __init__(self, conf, vocab):
         super().__init__()
         self.conf = conf
         self.vocab = vocab
-        self.embeddings = embeddings
+        self.embeddings = self.vocab.embeddings
         # from_pretrained outputs only torch.float64
         self.word_embeddings = nn.Embedding.from_pretrained(torch.from_numpy(self.embeddings), freeze=False).float()
         self.char_embeddings = nn.Embedding(len(self.vocab.vocab['char-index']), self.conf["char_embeddings_dimension"])

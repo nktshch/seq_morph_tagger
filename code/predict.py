@@ -1,25 +1,31 @@
 """Contains method that predicts word tags for raw sentences."""
 
-from trainer import collate_batch
+from trainer import collate_batch, calculate_accuracy
 from model.model import Model
 from data_preparation.vocab import Vocab
 
 import torch
+from torch import cuda
+import pickle
 
 
 device = 'cuda' if cuda.is_available() else 'cpu'
 
 
-def predict(sentence, sentence_pyconll=None, model_file="models/small_model.pt"):
+def predict(model_file, vocab_file, sentence, sentence_pyconll=None):
     """Uses saved model to assign tags to words for list of sentences and save them in a file.
 
     Args:
+        model_file (string): File containing saved model parameters, .pt.
+        vocab_file (string): File containing vocab dictionary.
         sentence (list): List of words in a sentence.
         sentence_pyconll (list): If there is a sentence in pyconll format, it can be used to calculate accuracy.
-        model_file (string): File containing saved model parameters.
     """
 
-    conf, vocab, state_dict = torch.load(model_file)
+    conf, state_dict = torch.load(model_file)
+    with open(vocab_file, 'rb') as vf:
+        vocab = pickle.load(vf)
+
     model = Model(conf, vocab)
     model.load_state_dict(state_dict)
     model.to(device)
@@ -46,50 +52,6 @@ def predict(sentence, sentence_pyconll=None, model_file="models/small_model.pt")
         print(f"Correct: {correct}, accuracy: {correct / total}")
 
 
-# def collate_single(sentence, vocab, pad_id=0, sos_id=1):
-#     """Collates single sentence with no labels. This is essentially CustomDataset with 1 sentence followed by
-#     collate_batch with batch size 1.
-#
-#     Used in predict method that takes raw sentence and predicts grammemes for all words.
-#
-#     Args:
-#         sentence (list): Sentence as a list of words.
-#         vocab (vocab): Vocabulary from Vocab class. Used to map chars and words to indices.
-#         pad_id (int, default 0): The id of the pad token in all dictionaries.
-#         sos_id (int, default 1): The id of the sos (start of sequence) token.
-#
-#     Returns:
-#         tuple: (words, chars, labels). All of them have type torch.Tensor. Size of words is (sentence_length, 1).
-#             Size of chars is (sentence_length, max_word_length). Size of labels is (1, sentence_length)
-#
-#     """
-#
-#     words = []
-#     chars = []
-#     labels = []
-#     for word in sentence:
-#         words += [vocab["word-index"].get(word, 1)]
-#         char_ids = []
-#         for char in word:
-#             char_ids += [vocab["char-index"].get(char, 1)]
-#         chars += [char_ids]
-#         labels += [[]]
-#
-#     max_word_length = max(map(lambda x: len(x), chars))
-#     sentence_length = len(words)
-#
-#     for chars_indices in chars:
-#         chars_indices += [pad_id] * (max_word_length - len(chars_indices))
-#
-#
-#     words = torch.tensor(words, dtype=torch.long)
-#     words = words[:, None]
-#     chars = torch.tensor(chars, dtype=torch.long)
-#     labels = sos_id * torch.ones(1, sentence_length, dtype=torch.long)
-#
-#     return words, chars, labels
-
-
 def predictions_to_grammemes(vocabulary, predictions):
     """Turns indices of predictions produced by decoder into actual grammemes (strings).
 
@@ -112,4 +74,4 @@ def predictions_to_grammemes(vocabulary, predictions):
 
 if __name__ == "__main__":
     sentence_ = "Синяя машина будет ехать по дороге .".split()
-    predict(sentence_)
+    predict("./model/seed_0/model.pt", "./model/vocab.pickle", sentence_)

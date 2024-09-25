@@ -26,7 +26,7 @@ class Trainer(nn.Module):
         self.conf = conf
         self.model = model
         self.vocab = model.vocab
-        self.model_directory = f"{self.conf['directory']}/models/{self.conf['model_name']}"
+        self.directory = f"{self.conf['model']}/seed_{run_number}"
 
         if subset_size == 0:
             train_subset = train_data
@@ -57,7 +57,7 @@ class Trainer(nn.Module):
         self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
         self.optimizer = torch.optim.SGD(self.parameters(), lr=self.conf['learning_rate'])
 
-        self.writer = SummaryWriter(log_dir=f"{self.model_directory}/runs")
+        self.writer = SummaryWriter(log_dir=self.directory)
         self.current_epoch = 0
         self.print_every = 20  # write to log every so many iteration
         self.best_loss = torch.inf
@@ -84,8 +84,8 @@ class Trainer(nn.Module):
                 else:
                     self.no_improv = 0
                     self.best_loss = valid_loss
-                    torch.save([self.conf, self.vocab, self.model.state_dict()],
-                               f"{self.model_directory}/model.pt")
+                    torch.save([self.conf, self.model.state_dict()],
+                               f"{self.directory}/model.pt")
                 self.current_epoch += 1
 
 
