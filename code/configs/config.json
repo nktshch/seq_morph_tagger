@@ -18,7 +18,7 @@
     "decoder_max_iterations": 12,
     "sentence_train_batch_size": 5,
     "sentence_eval_batch_size": 5,
-    "number_of_runs": 1,
+    "number_of_runs": 2,
     "UNK": "$UNK$",
     "NUM": "$NUM$",
     "NONE": "O",

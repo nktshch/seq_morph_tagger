@@ -6,12 +6,13 @@ from model.model import Model
 from trainer import Trainer
 
 import argparse
+from pathlib import Path
 import json
+import fasttext
 import torch
 from torch import cuda
 import numpy as np
 import random
-import copy
 
 
 def parse_arguments():
@@ -20,6 +21,7 @@ def parse_arguments():
     argp = argparse.ArgumentParser()
     argp.add_argument('config', help='json file containing configurations parameters')
     argp.add_argument('phase', help='train, test')
+    argp.add_argument('vocab_file', help='file with vocabulary, .pickle extension')
     argp.add_argument('train_directory', help='directory containing files with training data, they should be .conllu')
     argp.add_argument('--valid_directory', help='directory containing files with validation data, they should be .conllu')
     argp.add_argument('--test_directory', help='directory containing files with testing data, they should be .conllu')
@@ -40,6 +42,7 @@ def parse_arguments():
         config = json.load(json_file)
 
     config['phase'] = args.phase
+    config['vocab_file'] = args.vocab_file
     config['train_directory'] = args.train_directory
     config['valid_directory'] = args.valid_directory
     config['test_directory'] = args.test_directory
@@ -68,13 +71,13 @@ def main():
     train_data = CustomDataset(conf, vocab, conf['train_directory'],
                                sentences_pickle=conf['train_sentences_pickle'])
 
-    if vocab.set_valid:
+    if Path(conf["valid_directory"]).is_dir() and list(Path(conf["valid_directory"]).iterdir()):
         valid_data = CustomDataset(conf, vocab, conf['valid_directory'],
                                    sentences_pickle=conf['valid_sentences_pickle'])
     else:
         valid_data = None
 
-    if vocab.set_test:
+    if Path(conf["test_directory"]).is_dir() and list(Path(conf["test_directory"]).iterdir()):
         test_data = CustomDataset(conf, vocab, conf['test_directory'],
                                   sentences_pickle=conf['test_sentences_pickle'])
     else:

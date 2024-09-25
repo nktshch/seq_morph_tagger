@@ -2,6 +2,7 @@
 
 from trainer import collate_batch
 from model.model import Model
+from data_preparation.vocab import Vocab
 
 import torch
 
@@ -9,38 +10,74 @@ import torch
 # device = 'cuda' if cuda.is_available() else 'cpu'
 
 
-def predict(sentence, model_file="models/small_model.pt"):
+def predict(sentence, sentence_pyconll=None, model_file="models/small_model.pt"):
     """Uses saved model to assign tags to words for list of sentences and save them in a file.
 
     Args:
         sentence (list): List of words in a sentence.
+        sentence_pyconll (list): If there is a sentence in pyconll format, it can be used to calculate accuracy.
         model_file (string): File containing saved model parameters.
     """
 
-    model = Model()
-    model.load_state_dict(torch.load(model_file, weights_only=True))
-    vocab = model.data.vocab
-    device = model.conf['device']
+    conf, vocab, state_dict = torch.load(model_file)
+    model = Model(conf, vocab)
+    model.load_state_dict(state_dict)
+    device = conf['device']
+    model.to(device)
+    model.eval()
 
-    words, labels = vocab.sentence_to_indices(sentence, sentence)
-    if [(words, labels)][0][1][0]:
-        print("No")
+    words, labels = vocab.sentence_to_indices(sentence, sentence_pyconll)
     words, chars, labels = collate_batch([(words, labels)])
 
-    print(words)
-    print(chars)
-    print(labels)
     words = words.to(device)
     chars = chars.to(device)
     if labels:
         labels = labels.to(device)
 
-    predictions, probabilities = model(words, chars, labels)
-
+    predictions, probabilities = model(words, chars, None)
     grammemes = predictions_to_grammemes(vocab.vocab, predictions.permute(1, 0))
 
     for word, tag in zip(sentence, grammemes):
         print(f"{word} - {tag}")
+
+    # check accuracy if labels are available
+    if labels:
+        targets = labels[1:]
+        correct, total = calculate_accuracy(vocab, conf, predictions, targets)
+        print(f"Correct: {correct}, accuracy: {correct / total}")
+
+
+# def test_model(self):
+#     self.model.eval()
+#
+#     # code similar to train_epoch
+#     progress_bar = tqdm(enumerate(self.test_loader), total=len(self.test_loader), colour='#ffbbbb')
+#     running_error = 0.0
+#     correct, total = 0, 0
+#     for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
+#         words_batch = words_batch.to(self.conf['device'])
+#         chars_batch = chars_batch.to(self.conf['device'])
+#         labels_batch = labels_batch.to(self.conf['device'])
+#
+#         predictions, probabilities = self.model(words_batch, chars_batch, None)
+#         targets = labels_batch[1:]  # slice is taken to ignore SOS token
+#         probabilities = probabilities[:len(targets)]
+#
+#         error = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+#         running_error += error.item()
+#
+#         correct_batch, total_batch = calculate_accuracy(self.vocab, self.conf, predictions, targets)
+#         correct += correct_batch
+#         total += total_batch
+#     valid_accuracy = correct / total
+#     valid_loss = running_error / (self.current_epoch + 1) * len(self.valid_loader)
+#     self.writer.add_scalar("valid accuracy",
+#                            valid_accuracy,
+#                            (self.current_epoch + 1) * len(self.valid_loader))
+#     self.writer.add_scalar("valid loss",
+#                            valid_loss,
+#                            (self.current_epoch + 1) * len(self.valid_loader))
+#     return valid_accuracy, valid_loss
 
 
 # def collate_single(sentence, vocab, pad_id=0, sos_id=1):

@@ -19,7 +19,8 @@ class Model(nn.Module):
         super().__init__()
         self.conf = conf
         self.vocab = vocab
-        self.encoder = Encoder(self.conf, self.vocab)  # provides words embeddings
+
+        self.encoder = Encoder(self.conf, self.vocab, self.vocab.embeddings)
         self.decoder = Decoder(self.conf, self.vocab)
 
     def forward(self, words_batch, chars_batch, labels_batch=None):
