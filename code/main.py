@@ -23,8 +23,7 @@ def parse_arguments():
     argp.add_argument('language', help='Directory with all files used for training. Must contain train conllu files')
     argp.add_argument('model', help='Directory with model and runs')
     argp.add_argument('--pretrained_embeddings',
-                      help='file with word embeddings (fastText), .bin extension. If embeddings_file is not provided,'
-                           'this must be.')
+                      help='file with word embeddings (fastText), .bin extension')
 
     args = argp.parse_args()
 
@@ -40,12 +39,12 @@ def parse_arguments():
     config['char_LSTM_directions'] = 1 + int(config['char_LSTM_bidirectional'])
     config['grammeme_LSTM_hidden'] = config['word_LSTM_directions'] * config['word_LSTM_hidden']
 
-    config['train_files'] = list(map(lambda x: x.relative_to('.'), Path(config['language']).glob("*train*.conllu")))
-    config['valid_files'] = list(map(lambda x: x.relative_to('.'), Path(config['language']).glob("*dev*.conllu")))
-    config['test_files'] = list(map(lambda x: x.relative_to('.'), Path(config['language']).glob("*test*.conllu")))
+    config['train_files'] = [str(x) for x in Path(config['language']).glob("*train*.conllu")]
+    config['valid_files'] = [str(x) for x in Path(config['language']).glob("*dev*.conllu")]
+    config['test_files'] = [str(x) for x in Path(config['language']).glob("*test*.conllu")]
     config['vocab_file'] = config['model'] + "/vocab.pickle"
 
-    Path(config['model']).mkdir(exist_ok=True)
+    Path(config['model']).mkdir(parents=True, exist_ok=True)
     return config
 
 
@@ -80,7 +79,7 @@ def main():
         vocab.create_embeddings(dimension=conf['word_embeddings_dimension'])
         model = Model(conf, vocab).to(conf['device'])
         trainer = Trainer(conf, model, train_data, valid_data, test_data,
-                          run_number=run_number, subset_size=10).to(conf['device'])
+                          run_number=run_number).to(conf['device'])
         trainer.epoch_loops()
 
         print("Training complete")

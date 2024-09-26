@@ -1,4 +1,4 @@
-"""Docstring for model.py."""
+"""Contains class Model that has encoder and decoder and produces predictions and probabilities of grammemes."""
 
 import torch
 import torch.nn as nn
@@ -13,6 +13,10 @@ class Model(nn.Module):
     Args:
         conf (dict): Dictionary with configuration parameters.
         vocab (Vocab): Instance of class containing vocab.
+
+    Attributes:
+        encoder: Encoder class from encoder.py
+        decoder: Decoder class from decoder.py
     """
 
     def __init__(self, conf, vocab):
@@ -33,6 +37,8 @@ class Model(nn.Module):
                 Size (batch_size * max_sentence_length, max_word_length).
             labels_batch (torch.Tensor, default None): Tensor of labels indices for every word in a batch.
                 Size (max_label_length, batch_size * max_sentence_length).
+                If None, decoder will use generated grammemes for the next prediction (inference mode).
+                Otherwise, decoder will use labels_batch (training mode)
 
         Returns:
             tuple: Tuple consists of predicted grammemes and their probabilities.

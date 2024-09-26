@@ -16,6 +16,7 @@ class Trainer(nn.Module):
         model (Model): Instance of class containing model parameters.
         valid_data (CustomDataset): Dataset for validation.
         test_data (CustomDataset): Dataset for testing.
+        run_number: Run / random seed number.
         subset_size (float or int): The part of dataset from model.data that will be used.
             If int, treated as the number of samples from model.data with 0 treated as a whole dataset.
             If float, should be between 0 and 1, treated as the proportion of the dataset used during training.

@@ -1,4 +1,4 @@
-"""Docstring for dataset.py."""
+"""Contains CustomDataset class that inherits Dataset from PyTorch."""
 
 from data_preparation.vocab import Vocab
 
@@ -25,11 +25,11 @@ class CustomDataset(Dataset):
         files (list): List of .conllu files strings.
 
     Attributes:
-        vocab: Vocabulary created in vocab.py.
+        sentences_pyconll: Sentences in CONLL-U format.
         sentences: List of lists of strings. Raw sentences.
 
     Examples:
-        >>> dataset = CustomDataset(config, Vocab(config), config['train_files'], sentences_pickle="example_set.pickle")
+        >>> dataset = CustomDataset(config, Vocab(config), config['train_files'])
         >>> print(dataset.vocab.vocab["index-word"][dataset[66][0][8][0]])
     """
 
@@ -48,13 +48,13 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, index):
         """Returns indices of words, chars, and grammemes for a sentence with a given index."""
-        words, labels = \
-            self.vocab.sentence_to_indices(self.sentences[index], self.sentences_pyconll[index])
+        words, labels = self.vocab.sentence_to_indices(self.sentences[index],
+                                                       self.sentences_pyconll[index])
         return words, labels
 
     def get_all_sentences(self):
         """
-        Loads sentences from .conllu files and stores them as pyconll sentences in self.sentences_pyconll
+        Loads sentences from .conllu files and stores them as pyconll sentences in self.sentences_pyconll,
         and as lists of strings in self.sentences.
         """
 
@@ -68,5 +68,6 @@ class CustomDataset(Dataset):
         for sentence in self.sentences_pyconll:
             words = []
             for word in sentence:
-                words += [word.form]
+                if '.' not in word.id:
+                    words += [word.form]
             self.sentences += [words]

@@ -7,11 +7,10 @@ import torch.nn as nn
 class Encoder(nn.Module):
     """Class creates embeddings for words and chars, puts them through LSTMs to produce word embeddings.
 
-    It has access to the instance of CustomDataset, created by Model class.
     Method forward takes words_batch -- size (batch_size, max_sentence_length) -- and
     chars_batch -- size (batch_size * max_sentence_length, max_word_length) -- as an input. It returns output from the
     LSTM for every word in a sentence.
-    The final shape of the output is (batch_size, max_sentence_length, 2 * word_LSTM_hidden).
+    The final shape of the output is (max_sentence_length, batch_size, grammeme_LSTM_hidden).
 
     Args:
         conf (dict): Dictionary with configuration parameters.

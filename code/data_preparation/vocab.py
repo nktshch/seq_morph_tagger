@@ -1,4 +1,4 @@
-"""Handles vocabulary words and embeddings. Conains method sentence_to_indices which is used in dataset.py"""
+"""Handles vocabulary words and embeddings. Contains method sentence_to_indices which is used in dataset.py"""
 
 from pathlib import Path
 import pyconll
@@ -24,7 +24,7 @@ def get_vocab(conf, rewrite=False):
 class Vocab:
     """Contains dictionary of dictionaries and embeddings of wordforms.
 
-    Its keys are "word-index", "index-word", "grammeme-index", "index-grammeme",
+    Dictionary keys are "word-index", "index-word", "grammeme-index", "index-grammeme",
     "char-index", "index-char", "singleton-index", "index-singleton".
     Each of them corresponds to a dictionary that maps element to index or vice versa.
 
@@ -36,10 +36,11 @@ class Vocab:
 
     Attributes:
         vocab: Dictionary with all the dictionaries that map strings to indices or vice versa.
+        embeddings: Embeddings of wordforms. By default, they are uninitialized and are used only for encoder __init__.
+            During training, they are sampled from normal distribution for words out of fastText library.
     """
     
     def __init__(self, conf):
-
         self.conf = conf
         self.vocab = {} # dictionary of dictionaries, main object of the class
 
@@ -105,10 +106,11 @@ class Vocab:
         wordforms = set()
         for sentence in sentences:
             for _, token in enumerate(sentence):
-                if token.form.isdigit():
-                    wordforms.add(self.conf['NUM'])
-                else:
-                    wordforms.add(token.form.lower())
+                if '.' not in token.id:
+                    if token.form.isdigit():
+                        wordforms.add(self.conf['NUM'])
+                    else:
+                        wordforms.add(token.form.lower())
         wordforms.add(self.conf['NUM'])
         wordforms = [self.conf['PAD'], self.conf['UNK']] + sorted(list(wordforms))
         return get_dictionaries(wordforms)
@@ -128,9 +130,10 @@ class Vocab:
         grammemes = set()
         for sentence in sentences:
             for _, token in enumerate(sentence):
-                if token.upos is not None:
-                    grammemes.add("POS=" + token.upos)
-                grammemes.update([key + "=" + feat for key in token.feats for feat in token.feats[key]])
+                if '.' not in token.id:
+                    if token.upos is not None:
+                        grammemes.add("POS=" + token.upos)
+                    grammemes.update([key + "=" + feat for key in token.feats for feat in token.feats[key]])
         grammemes = [self.conf["PAD"], self.conf["SOS"], self.conf["EOS"], self.conf["UNK"]] + sorted(list(grammemes))
         return get_dictionaries(grammemes)
     
@@ -149,7 +152,8 @@ class Vocab:
         wordforms = set()
         for sentence in sentences:
             for _, token in enumerate(sentence):
-                wordforms.add(token.form)
+                if '.' not in token.id:
+                    wordforms.add(token.form)
         wordforms = list(wordforms)        
         
         chars = set()
