@@ -211,12 +211,13 @@ class Vocab:
 
         if sentence_pyconll:
             for word in sentence_pyconll:
-                grammeme_ids = []
-                if word.upos is not None:
-                    grammeme_ids = [self.vocab["grammeme-index"]["POS=" + word.upos]]
-                grammeme_ids += [
-                    self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id) for key in word.feats for feat in word.feats[key]]
-                labels += [grammeme_ids]
+                if '.' not in word.id and '-' not in word.id:
+                    grammeme_ids = []
+                    if word.upos is not None:
+                        grammeme_ids = [self.vocab["grammeme-index"]["POS=" + word.upos]]
+                    grammeme_ids += [
+                        self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id) for key in word.feats for feat in word.feats[key]]
+                    labels += [grammeme_ids]
         else:
             for _ in sentence:
                 labels += [[]]

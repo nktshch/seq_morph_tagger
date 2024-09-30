@@ -71,10 +71,13 @@ class Trainer(nn.Module):
 
     def epoch_loops(self):
         for epoch in range(self.conf['max_epochs']):
+            self.model.train()
             self.train_epoch()
 
             if len(self.valid_loader) > 0:
-                valid_accuracy, valid_loss = self.valid_epoch()
+                self.model.eval()
+                with torch.no_grad():
+                    valid_accuracy, valid_loss = self.valid_epoch()
                 print(f"valid accuracy at epoch {self.current_epoch}: {valid_accuracy}")
                 print(f"valid loss: {valid_loss}")
                 if valid_loss >= self.best_loss:
@@ -91,9 +94,7 @@ class Trainer(nn.Module):
 
 
     def train_epoch(self):
-        self.model.train()
         progress_bar = tqdm(enumerate(self.train_loader), total=len(self.train_loader))
-        running_loss = 0.0
         # current_epoch_tags = [] # stores tags for this epoch
 
         for iteration, (words_batch, chars_batch, labels_batch) in progress_bar:
@@ -109,21 +110,16 @@ class Trainer(nn.Module):
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.conf['clip'])
             self.optimizer.step()
-            running_loss += loss.item()
 
-            if (self.current_epoch * len(self.train_loader) + iteration) % self.print_every == 0:
+            if iteration % self.print_every == 0:
                 self.writer.add_scalar("training loss",
-                                       running_loss / self.print_every,
+                                       loss.item(),
                                        self.current_epoch * len(self.train_loader) + iteration)
-                running_loss = 0.0
 
         # print("One train epoch complete")
 
 
     def valid_epoch(self):
-        self.model.eval()
-
-        # code similar to train_epoch
         progress_bar = tqdm(enumerate(self.valid_loader), total=len(self.valid_loader), colour='#bbbbff')
         running_error = 0.0
         correct, total = 0, 0
@@ -136,20 +132,22 @@ class Trainer(nn.Module):
             targets = labels_batch[1:]  # slice is taken to ignore SOS token
             probabilities = probabilities[:len(targets)]
 
-            error = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
-            running_error += error.item()
-
             correct_batch, total_batch = calculate_accuracy(self.vocab, self.conf, predictions, targets)
             correct += correct_batch
             total += total_batch
+
+            error = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            running_error += error.item() * total_batch
+
         valid_accuracy = correct / total
-        valid_loss = running_error / (self.current_epoch + 1) * len(self.valid_loader)
+        valid_loss = running_error / total
         self.writer.add_scalar("valid accuracy",
                                valid_accuracy,
                                (self.current_epoch + 1) * len(self.valid_loader))
-        self.writer.add_scalar("valid loss",
+        self.writer.add_scalar("valid loss (average)",
                                valid_loss,
                                (self.current_epoch + 1) * len(self.valid_loader))
+        print(valid_accuracy, valid_loss)
         return valid_accuracy, valid_loss
 
 
@@ -166,8 +164,7 @@ def calculate_accuracy(vocabulary, conf, predictions, targets):
     for tag, target in zip(masked_predictions, targets.permute(1, 0)):
         if target[0] != 0:
             n_total += 1
-            n_correct += int(torch.equal(tag, target))
-
+            n_correct += int(torch.equal(tag[tag.nonzero()], target[target.nonzero()]))
     return n_correct, n_total
 
 

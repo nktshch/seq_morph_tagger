@@ -36,17 +36,18 @@ def predict(model_file, vocab_file, sentence, sentence_pyconll=None):
 
     words = words.to(device)
     chars = chars.to(device)
-    if labels:
+    if labels is not None:
         labels = labels.to(device)
 
-    predictions, probabilities = model(words, chars, None)
+    with torch.no_grad():
+        predictions, probabilities = model(words, chars, labels)
     grammemes = predictions_to_grammemes(vocab.vocab, predictions.permute(1, 0))
 
     for word, tag in zip(sentence, grammemes):
         print(f"{word} - {tag}")
 
     # check accuracy if labels are available
-    if labels:
+    if labels is not None:
         targets = labels[1:]
         correct, total = calculate_accuracy(vocab, conf, predictions, targets)
         print(f"Correct: {correct}, accuracy: {correct / total}")
@@ -73,5 +74,7 @@ def predictions_to_grammemes(vocabulary, predictions):
 
 
 if __name__ == "__main__":
-    sentence_ = "Синяя машина будет ехать по дороге .".split()
-    predict("./model/seed_0/model.pt", "./model/vocab.pickle", sentence_)
+    sentence_ = "Безгачиха -- деревня в Бабушкинском районе Вологодской области .".split()
+    import pyconll
+    sentence_pyconll = pyconll.load.load_from_file("./model/test.conllu")[0]
+    predict("./model/seed_0/model.pt", "./model/vocab.pickle", sentence_, sentence_pyconll)
