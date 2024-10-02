@@ -68,6 +68,6 @@ class CustomDataset(Dataset):
         for sentence in self.sentences_pyconll:
             words = []
             for word in sentence:
-                if '.' not in word.id:
+                if '.' not in word.id and '-' not in word.id:
                     words += [word.form]
             self.sentences += [words]

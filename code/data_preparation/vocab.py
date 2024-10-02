@@ -45,6 +45,8 @@ class Vocab:
         self.vocab = {} # dictionary of dictionaries, main object of the class
 
         self.sentences_train = None
+        self.grammemes_by_freq = [] # list of grammemes from vocab sorted by frequency
+        self.grammemes_by_freq_indices = None # defaultdict used to map string to index in grammemes_by_freq list
 
         self.create_vocab()
         self.embeddings = np.ndarray((len(self.vocab['word-index']), self.conf['word_embeddings_dimension']))
@@ -58,7 +60,7 @@ class Vocab:
         where element can be wordform, grammeme, char or singleton.
         """
 
-        assert self.conf['train_files'], f"Directory {self.conf['directory']} doesn't contain train files!"
+        assert self.conf['train_files'], f"Directory {self.conf['language']} doesn't contain train files!"
 
         # There is no way of creating empty sentences_train variable that will allow summing itself with
         # pyconll.unit.conll.Conll object. For this reason, we first consider only the first file in the list,
@@ -106,7 +108,7 @@ class Vocab:
         wordforms = set()
         for sentence in sentences:
             for _, token in enumerate(sentence):
-                if '.' not in token.id:
+                if '.' not in token.id and '-' not in token.id:
                     if token.form.isdigit():
                         wordforms.add(self.conf['NUM'])
                     else:
@@ -119,6 +121,11 @@ class Vocab:
         """
         Gets all grammemes in the dataset and creates two dictionaries:
         one with grammeme:index pairs, other with index:grammeme pairs.
+        Also, sorts all grammemes in vocab by frequency and stores them in a list. Creates defaultdict object
+        that maps strings representing grammemes to indices in this list.
+        This defaultdict is used when 'frequency' is chosen as grammeme order in config.
+        During validation, test, and inference, if the grammeme is not in the sorted list,
+        it will be assigned index equal to the length of the list (less frequent than all of them, in a sense).
 
         Args:
             sentences (pyconll.unit.conll.Conll): All of the sentences from which to get grammemes.
@@ -128,13 +135,24 @@ class Vocab:
         """
         
         grammemes = set()
+        from collections import defaultdict
+        frequencies = defaultdict(int)
         for sentence in sentences:
             for _, token in enumerate(sentence):
-                if '.' not in token.id:
+                if '.' not in token.id and '-' not in token.id:
                     if token.upos is not None:
                         grammemes.add("POS=" + token.upos)
-                    grammemes.update([key + "=" + feat for key in token.feats for feat in token.feats[key]])
+                        frequencies["POS=" + token.upos] += 1
+                    for key in token.feats:
+                        for feat in token.feats[key]:
+                            grammemes.add(key + "=" + feat)
+                            frequencies[key + "=" + feat] += 1
         grammemes = [self.conf["PAD"], self.conf["SOS"], self.conf["EOS"], self.conf["UNK"]] + sorted(list(grammemes))
+        self.grammemes_by_freq = [item[0] for item in sorted(frequencies.items(),
+                                                             key=lambda item: item[1], reverse=True)]
+        self.grammemes_by_freq_indices = defaultdict(lambda:len(self.grammemes_by_freq))
+        for i, st in enumerate(self.grammemes_by_freq):
+            self.grammemes_by_freq_indices[st] = i
         return get_dictionaries(grammemes)
     
     def get_all_chars(self, sentences):
@@ -152,7 +170,7 @@ class Vocab:
         wordforms = set()
         for sentence in sentences:
             for _, token in enumerate(sentence):
-                if '.' not in token.id:
+                if '.' not in token.id and '-' not in token.id:
                     wordforms.add(token.form)
         wordforms = list(wordforms)        
         
@@ -213,11 +231,34 @@ class Vocab:
             for word in sentence_pyconll:
                 if '.' not in word.id and '-' not in word.id:
                     grammeme_ids = []
-                    if word.upos is not None:
-                        grammeme_ids = [self.vocab["grammeme-index"]["POS=" + word.upos]]
-                    grammeme_ids += [
-                        self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id) for key in word.feats for feat in word.feats[key]]
-                    labels += [grammeme_ids]
+                    if self.conf['order'] == 'direct':
+                        if word.upos is not None:
+                            grammeme_ids = [self.vocab["grammeme-index"]["POS=" + word.upos]]
+                        grammeme_ids += [
+                            self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id)
+                            for key in word.feats for feat in word.feats[key]]
+                        labels += [grammeme_ids]
+
+                    elif self.conf['order'] == 'reverse':
+                        grammeme_ids += [
+                            self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id)
+                            for key in reversed(word.feats) for feat in reversed(word.feats[key])]
+                        if word.upos is not None:
+                            grammeme_ids += [self.vocab["grammeme-index"]["POS=" + word.upos]]
+                        labels += [grammeme_ids]
+
+                    elif self.conf['order'] == 'frequency':
+                        grammeme_strings = []
+                        if word.upos is not None:
+                            grammeme_strings = ["POS=" + word.upos]
+                        grammeme_strings += [key + "=" + feat for key in word.feats for feat in word.feats[key]]
+                        grammeme_strings = sorted(grammeme_strings,
+                                                  key=lambda item: self.grammemes_by_freq_indices[item])
+                        grammeme_ids = [self.vocab["grammeme-index"][g] for g in grammeme_strings]
+                        labels += [grammeme_ids]
+
+                    else:
+                        raise ValueError(f"Unknown order of grammemes: {self.conf['order']}")
         else:
             for _ in sentence:
                 labels += [[]]

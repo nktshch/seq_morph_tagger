@@ -30,6 +30,9 @@ def parse_arguments():
     with open(args.config, 'r') as json_file:
         config = json.load(json_file)
 
+    if config['order'] not in ["direct", "reverse", "frequency"]:
+        raise ValueError(f"Unknown order of grammemes: {config['order']}")
+
     config['language'] = args.language
     config['model'] = args.model
     config['pretrained_embeddings'] = args.pretrained_embeddings
