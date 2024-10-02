@@ -27,7 +27,7 @@ class Model(nn.Module):
         self.encoder = Encoder(self.conf, self.vocab)
         self.decoder = Decoder(self.conf, self.vocab)
 
-    def forward(self, words_batch, chars_batch, labels_batch=None):
+    def forward(self, words_batch, chars_batch, labels_batch=None, oov=None):
         """Uses Encoder and Decoder to perform one pass on a sinle batch.
 
         Args:
@@ -38,14 +38,15 @@ class Model(nn.Module):
             labels_batch (torch.Tensor, default None): Tensor of labels indices for every word in a batch.
                 Size (max_label_length, batch_size * max_sentence_length).
                 If None, decoder will use generated grammemes for the next prediction (inference mode).
-                Otherwise, decoder will use labels_batch (training mode)
+                Otherwise, decoder will use labels_batch (training mode).
+            oov (tuple): Out of vocab embeddings that need to be passed to encoder during inference.
 
         Returns:
             tuple: Tuple consists of predicted grammemes and their probabilities.
         """
 
         # shape (max_sentence_length, batch_size, grammeme_LSTM_hidden)
-        encoder_hidden, encoder_cell = self.encoder(words_batch, chars_batch)
+        encoder_hidden, encoder_cell = self.encoder(words_batch, chars_batch, oov=oov)
         decoder_hidden = encoder_hidden.permute(1, 0, 2).reshape(-1, encoder_hidden.size(dim=2))
         decoder_cell = encoder_cell.permute(1, 0, 2).reshape(-1, encoder_cell.size(dim=2))
         predictions, probabilities = self.decoder(decoder_hidden, decoder_cell, labels_batch)

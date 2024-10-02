@@ -35,7 +35,7 @@ class Encoder(nn.Module):
         self.wordDropout_state = nn.Dropout(p=self.conf['word_LSTM_state_dropout'])
         self.wordDropout_output = nn.Dropout(p=self.conf['word_LSTM_output_dropout'])
 
-    def forward(self, words_batch, chars_batch):
+    def forward(self, words_batch, chars_batch, oov=None):
         """Takes batches of indices of words and chars and creates embeddings with LSTM.
 
         PyTorch LSTM module doesn't return cell states by default. That is why we have to use LSTMCell in a loop.
@@ -45,6 +45,7 @@ class Encoder(nn.Module):
                 Size (max_sentence_length, batch_size).
             chars_batch (torch.Tensor): Tensor of chars indices for every word in a batch.
                 Size (batch_size * max_sentence_length, max_word_length).
+            oov (tuple): Out of vocab embeddings that are used during inference.
 
         Returns:
             tuple: Tuple consists of two tensors - one with hidden states, and one with cell states of the word LSTM.
@@ -53,6 +54,9 @@ class Encoder(nn.Module):
 
         current_batch_size = words_batch.shape[1]
         words = self.word_embeddings(words_batch)
+        if oov is not None:
+            fasttext_embeddings, mask_embeddings = oov
+            words[mask_embeddings] = fasttext_embeddings
         chars = self.char_embeddings(chars_batch)
         # words has shape (max_sentence_length, batch_size, word_embeddings_dimension)
         # chars has shape (batch_size * max_sentence_length, max_word_length, char_embeddings_dimension)
