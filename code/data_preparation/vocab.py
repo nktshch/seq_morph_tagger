@@ -236,7 +236,7 @@ class Vocab:
                     grammeme_ids = []
                     if self.conf['order'] == 'direct':
                         if word.upos is not None:
-                            grammeme_ids = [self.vocab["grammeme-index"]["POS=" + word.upos]]
+                            grammeme_ids = [self.vocab["grammeme-index"].get("POS=" + word.upos, unk_grammeme_id)]
                         grammeme_ids += [
                             self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id)
                             for key in list(word.feats) for feat in list(word.feats[key])]
@@ -247,7 +247,7 @@ class Vocab:
                             self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id)
                             for key in reversed(list(word.feats)) for feat in reversed(list(word.feats[key]))]
                         if word.upos is not None:
-                            grammeme_ids += [self.vocab["grammeme-index"]["POS=" + word.upos]]
+                            grammeme_ids += [self.vocab["grammeme-index"].get("POS=" + word.upos, unk_grammeme_id)]
                         labels += [grammeme_ids]
 
                     elif self.conf['order'] == 'frequency':

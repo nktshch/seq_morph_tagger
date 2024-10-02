@@ -25,14 +25,11 @@ def predict(model_file, vocab_file, sentence, sentence_pyconll=None):
         sentence_pyconll (list): If there is a sentence in pyconll format, it can be used to calculate accuracy.
     """
 
-    temp = pathlib.PosixPath
-    pathlib.PosixPath = pathlib.WindowsPath
     conf, state_dict = torch.load(model_file)
     conf['order'] = 'direct'
     with open(vocab_file, 'rb') as vf:
         vocab = pickle.load(vf)
         vocab.conf['order'] = 'direct'
-    pathlib.PosixPath = temp
 
     model = Model(conf, vocab)
     model.load_state_dict(state_dict)
