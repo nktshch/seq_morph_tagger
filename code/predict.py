@@ -40,7 +40,9 @@ def predict(model_file, vocab_file, sentence, sentence_pyconll=None):
     model.eval()
 
     words, labels = vocab.sentence_to_indices(sentence, sentence_pyconll)
-    words, chars, labels = collate_batch([(words, labels)])
+    words, chars, labels, _ = collate_batch([((words, labels), sentence)])
+
+    assert _[0] == sentence, f"{_[0]} is not equal to {sentence}"
 
     words = words.to(device)
     chars = chars.to(device)
@@ -77,7 +79,6 @@ def predict(model_file, vocab_file, sentence, sentence_pyconll=None):
         print(word)
         print("PREDICTED")
         print(tag)
-
         print("\n")
 
     # check accuracy if labels are available

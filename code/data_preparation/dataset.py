@@ -50,7 +50,7 @@ class CustomDataset(Dataset):
         """Returns indices of words, chars, and grammemes for a sentence with a given index."""
         words, labels = self.vocab.sentence_to_indices(self.sentences[index],
                                                        self.sentences_pyconll[index])
-        return words, labels
+        return (words, labels), self.sentences[index]
 
     def get_all_sentences(self):
         """

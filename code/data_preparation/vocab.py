@@ -150,11 +150,14 @@ class Vocab:
         grammemes = [self.conf["PAD"], self.conf["SOS"], self.conf["EOS"], self.conf["UNK"]] + sorted(list(grammemes))
         self.grammemes_by_freq = [item[0] for item in sorted(frequencies.items(),
                                                              key=lambda item: item[1], reverse=True)]
-        self.grammemes_by_freq_indices = defaultdict(lambda:len(self.grammemes_by_freq))
+        self.grammemes_by_freq_indices = defaultdict(self.get_len)
         for i, st in enumerate(self.grammemes_by_freq):
             self.grammemes_by_freq_indices[st] = i
         return get_dictionaries(grammemes)
-    
+
+    def get_len(self):
+        return len(self.grammemes_by_freq)
+
     def get_all_chars(self, sentences):
         """
         Gets all chars in the dataset and creates two dictionaries:
@@ -236,13 +239,13 @@ class Vocab:
                             grammeme_ids = [self.vocab["grammeme-index"]["POS=" + word.upos]]
                         grammeme_ids += [
                             self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id)
-                            for key in word.feats for feat in word.feats[key]]
+                            for key in list(word.feats) for feat in list(word.feats[key])]
                         labels += [grammeme_ids]
 
                     elif self.conf['order'] == 'reverse':
                         grammeme_ids += [
                             self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id)
-                            for key in reversed(word.feats) for feat in reversed(word.feats[key])]
+                            for key in reversed(list(word.feats)) for feat in reversed(list(word.feats[key]))]
                         if word.upos is not None:
                             grammeme_ids += [self.vocab["grammeme-index"]["POS=" + word.upos]]
                         labels += [grammeme_ids]
@@ -281,3 +284,5 @@ def get_dictionaries(data):
     stoi = {element: index for index, element in enumerate(data)}
     itos = {index: element for index, element in enumerate(data)}
     return stoi, itos
+
+
