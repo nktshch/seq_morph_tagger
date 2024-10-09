@@ -224,8 +224,11 @@ class Vocab:
         for word in sentence:
             if word.isdigit():
                 word_ids = [self.vocab["word-index"][self.conf['NUM']]]
+            elif word.lower() in self.vocab["singleton-index"].keys() and np.random.rand() < self.conf["singleton_substitution"]:
+                word_ids = [self.vocab["word-index"][self.conf['UNK']]]
             else:
                 word_ids = [self.vocab["word-index"].get(word.lower(), unk_word_id)]
+
             for char in word:
                 word_ids += [self.vocab["char-index"].get(char, unk_char_id)]
             words += [word_ids]
