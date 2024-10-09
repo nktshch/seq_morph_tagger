@@ -127,16 +127,18 @@ class Trainer(nn.Module):
         progress_bar = tqdm(enumerate(self.valid_loader), total=len(self.valid_loader), colour='#bbbbff')
         running_error = 0.0
         correct, total = 0, 0
+        oov_correct, oov_total = 0, 0
+        vocab_correct, vocab_total = 0, 0
         for iteration, (words_batch, chars_batch, labels_batch, raw_sentences) in progress_bar:
             words_batch = words_batch.to(self.conf['device'])
             chars_batch = chars_batch.to(self.conf['device'])
             labels_batch = labels_batch.to(self.conf['device'])
 
             fasttext_embeddings = []
-            mask_embeddings = torch.zeros(words_batch.shape[0], dtype=bool, device=words_batch.device)
+            mask_embeddings = torch.zeros(words_batch.shape, dtype=bool, device=words_batch.device)
             for i, ith_words in enumerate(words_batch):
                 for j, word_index in enumerate(ith_words):
-                    if word_index.item() == unk_id:
+                    if word_index.item() == 1:
                         if raw_sentences[j][i] in ft.words:
                             fasttext_embeddings += [ft[raw_sentences[j][i]]]
                             mask_embeddings[i, j] = True
@@ -151,14 +153,22 @@ class Trainer(nn.Module):
             targets = labels_batch[1:]  # slice is taken to ignore SOS token
             probabilities = probabilities[:len(targets)]
 
-            correct_batch, total_batch = calculate_accuracy(self.vocab, self.conf, predictions, targets)
+            # correct_batch, total_batch, oov_correct_batch, oov_total_batch, vocab_correct_batch, vocab_total_batch = \
+            #     calculate_accuracy(self.vocab, self.conf, predictions, targets, mask_embeddings)
+            correct_batch, total_batch = calculate_accuracy(self.vocab, self.conf, predictions, targets, mask_embeddings)
             correct += correct_batch
             total += total_batch
+            # oov_correct += oov_correct_batch
+            # oov_total += oov_total_batch
+            # vocab_correct += vocab_correct_batch
+            # vocab_total += vocab_total_batch
 
             error = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             running_error += error.item() * total_batch
 
         valid_accuracy = correct / total
+        # oov_valid_accuracy = oov_correct / oov_total
+        # vocab_valid_accuracy = vocab_correct / vocab_total
         valid_loss = running_error / total
         self.writer.add_scalar("valid accuracy",
                                valid_accuracy,
@@ -166,17 +176,22 @@ class Trainer(nn.Module):
         self.writer.add_scalar("valid loss (average)",
                                valid_loss,
                                (self.current_epoch + 1) * len(self.valid_loader))
-        print(valid_accuracy, valid_loss)
+        print(f"acc: {valid_accuracy}, loss: {valid_loss}")
+        # print(f"oov acc: {oov_valid_accuracy}")
+        # print(f"vocab acc: {vocab_valid_accuracy}")
         return valid_accuracy, valid_loss
 
 
-def calculate_accuracy(vocabulary, conf, predictions, targets):
+def calculate_accuracy(vocabulary, conf, predictions, targets, mask_embeddings):
     """Metrics is a ratio of correctly predicted tags to total number of tags.
 
     All grammemes in a tag must be predicted correctly for it to count as correct.
     """
 
+    flattened_mask = mask_embeddings.permute(1, 0).reshape(-1)
     n_total, n_correct = 0, 0
+    oov_total, oov_correct = 0, 0
+    vocab_total, vocab_correct = 0, 0
     masked_predictions = masked_select(predictions.permute(1, 0),
                                        vocabulary.vocab["grammeme-index"][conf['EOS']])
 
@@ -184,7 +199,19 @@ def calculate_accuracy(vocabulary, conf, predictions, targets):
         if target[0] != 0:
             n_total += 1
             n_correct += int(torch.equal(tag[tag.nonzero()], target[target.nonzero()]))
+
+    # for tag, target in zip(masked_predictions[flattened_mask], targets.permute(1, 0)[flattened_mask]):
+    #     if target[0] != 0:
+    #         oov_total += 1
+    #         oov_correct += int(torch.equal(tag[tag.nonzero()], target[target.nonzero()]))
+    #
+    # for tag, target in zip(masked_predictions[~flattened_mask], targets.permute(1, 0)[~flattened_mask]):
+    #     if target[0] != 0:
+    #         vocab_total += 1
+    #         vocab_correct += int(torch.equal(tag[tag.nonzero()], target[target.nonzero()]))
+
     return n_correct, n_total
+    # return n_correct, n_total, oov_correct, oov_total, vocab_correct, vocab_total
 
 
 def collate_batch(batch_w_sentences, pad_id=0, sos_id=1, eos_id=2):
