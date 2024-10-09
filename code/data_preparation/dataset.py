@@ -59,9 +59,9 @@ class CustomDataset(Dataset):
         """
 
         print(f"Loading sentences for dataset")
-        self.sentences_pyconll = pyconll.load.load_from_file(self.files[0])
+        self.sentences_pyconll = pyconll.load_from_file(self.files[0])
         for file in self.files[1:]:
-            self.sentences_pyconll = self.sentences_pyconll + self.load.load_from_file(file)
+            self.sentences_pyconll = self.sentences_pyconll + pyconll.load_from_file(file)
 
         # notice that self.sentences contains words with capitalization
         # it will be ignored later when __getitem__ is called
