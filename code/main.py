@@ -63,13 +63,30 @@ def main():
 
     if conf['valid_files']:
         valid_data = CustomDataset(conf, vocab, conf['valid_files'])
+        valid_set = valid_data.words_set
     else:
         valid_data = None
+        valid_set = set()
 
     if conf['test_files']:
         test_data = CustomDataset(conf, vocab, conf['test_files'])
+        test_set = test_data.words_set
     else:
         test_data = None
+        test_set = set()
+
+    if valid_data is not None or test_data is not None:
+        print("Loading fastText")
+        ft = fasttext.load_model(conf['pretrained_embeddings'])
+        oov_pretrained_vocab = {}
+        oov_pretrained_set = valid_set | test_set
+        print(len(oov_pretrained_set))
+        for word in ft.words:
+            if word.lower() in oov_pretrained_set:
+                oov_pretrained_vocab[word.lower()] = ft[word]
+    else:
+        ft = None
+        oov_pretrained_vocab = None
 
     print(f"Training model {conf['number_of_runs']} time(s)")
     for run_number in range(conf['number_of_runs']):
@@ -79,11 +96,11 @@ def main():
         np.random.seed(run_number)
         random.seed(run_number)
 
-        vocab.create_embeddings(dimension=conf['word_embeddings_dimension'])
+        vocab.create_embeddings(ft=ft, dimension=conf['word_embeddings_dimension'])
         model = Model(conf, vocab).to(conf['device'])
         trainer = Trainer(conf, model, train_data, valid_data, test_data,
-                          run_number=run_number).to(conf['device'])
-        trainer.epoch_loops()
+                          run_number=run_number, subset_size=10).to(conf['device'])
+        trainer.epoch_loops(ft, oov_pretrained_vocab)
 
         print("Training complete")
 

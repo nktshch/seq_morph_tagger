@@ -71,9 +71,7 @@ class Trainer(nn.Module):
         print(f"{len(self.test_loader)} batches in test")
 
 
-    def epoch_loops(self):
-        if len(self.valid_loader) > 0:
-            ft = fasttext.load_model(self.conf['pretrained_embeddings'])
+    def epoch_loops(self, ft=None, oov_pretrained_set=None):
         for epoch in range(self.conf['max_epochs']):
             self.model.train()
             self.train_epoch()
@@ -81,9 +79,7 @@ class Trainer(nn.Module):
             if len(self.valid_loader) > 0:
                 self.model.eval()
                 with torch.no_grad():
-                    valid_accuracy, valid_loss = self.valid_epoch(ft)
-                print(f"valid accuracy at epoch {self.current_epoch}: {valid_accuracy}")
-                print(f"valid loss: {valid_loss}")
+                    valid_accuracy, valid_loss = self.valid_epoch(ft, oov_pretrained_set)
                 if valid_loss >= self.best_loss:
                     self.no_improv += 1
                     if self.no_improv >= self.conf['no_improv']:
@@ -123,7 +119,7 @@ class Trainer(nn.Module):
         # print("One train epoch complete")
 
 
-    def valid_epoch(self, ft):
+    def valid_epoch(self, ft, oov_pretrained_vocab):
         progress_bar = tqdm(enumerate(self.valid_loader), total=len(self.valid_loader), colour='#bbbbff')
         running_error = 0.0
         correct, total = 0, 0
@@ -139,8 +135,8 @@ class Trainer(nn.Module):
             for i, ith_words in enumerate(words_batch):
                 for j, word_index in enumerate(ith_words):
                     if word_index.item() == 1:
-                        if raw_sentences[j][i] in ft.words:
-                            fasttext_embeddings += [ft[raw_sentences[j][i]]]
+                        if raw_sentences[j][i].lower() in oov_pretrained_vocab.keys():
+                            fasttext_embeddings += [oov_pretrained_vocab[raw_sentences[j][i].lower()]]
                             mask_embeddings[i, j] = True
 
             oov = None
@@ -176,6 +172,7 @@ class Trainer(nn.Module):
         self.writer.add_scalar("valid loss (average)",
                                valid_loss,
                                (self.current_epoch + 1) * len(self.valid_loader))
+        print(f"EPOCH {self.current_epoch}")
         print(f"acc: {valid_accuracy}, loss: {valid_loss}")
         # print(f"oov acc: {oov_valid_accuracy}")
         # print(f"vocab acc: {vocab_valid_accuracy}")

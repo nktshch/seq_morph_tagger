@@ -74,24 +74,26 @@ class Vocab:
         self.vocab["char-index"], self.vocab["index-char"] = self.get_all_chars(self.sentences_train)
         self.vocab["singleton-index"], self.vocab["index-singleton"] = self.get_all_singletons(self.sentences_train)
 
-    def create_embeddings(self, dimension=300):
+    def create_embeddings(self, ft=None, dimension=300):
         """Loads embeddings and stores them in the class variable as list of ndarrays.
 
         If a word doesn't have the embedding, it is assigned a random one using normal distribution.
 
         Args:
+            ft: Preloaded in main.py fastText library.
             dimension (int, default 300): The dimension of embeddings.
         """
 
         print("Loading fastText embeddings")
-        ft = fasttext.load_model(self.conf['pretrained_embeddings'])
+        if ft is None:
+            ft = fasttext.load_model(self.conf['pretrained_embeddings'])
 
         self.embeddings = np.random.normal(scale=2.0 / (dimension + len(self.vocab['word-index'])),
                                            size=(len(self.vocab['word-index']), dimension))
 
-        for word in ft.get_words():
-            if word in self.vocab["word-index"].keys():
-                self.embeddings[self.vocab["word-index"][word]] = ft[word]
+        for word in ft.words:
+            if word.lower() in self.vocab["word-index"].keys():
+                self.embeddings[self.vocab["word-index"][word.lower()]] = ft[word]
 
     def get_all_wordforms(self, sentences):
         """

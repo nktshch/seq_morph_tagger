@@ -17,7 +17,7 @@ from torch.utils.data import Dataset
 
 
 class CustomDataset(Dataset):
-    """Loads fastText embeddings and CONLL-U sentences from files. It inherits Dataset class of PyTorch module.
+    """Loads CONLL-U sentences from files. It inherits Dataset class of PyTorch module.
 
     Args:
         conf (dict): Dictionary with configuration parameters.
@@ -39,6 +39,7 @@ class CustomDataset(Dataset):
         self.files = files
         self.sentences_pyconll = None
         self.sentences = []
+        self.words_set = set()
         self.get_all_sentences()
 
     def __len__(self):
@@ -64,10 +65,12 @@ class CustomDataset(Dataset):
             self.sentences_pyconll = self.sentences_pyconll + pyconll.load_from_file(file)
 
         # notice that self.sentences contains words with capitalization
+        # this is needed for chars
         # it will be ignored later when __getitem__ is called
         for sentence in self.sentences_pyconll:
             words = []
             for word in sentence:
                 if '.' not in word.id and '-' not in word.id:
                     words += [word.form]
+                    self.words_set.add(word.form.lower())
             self.sentences += [words]

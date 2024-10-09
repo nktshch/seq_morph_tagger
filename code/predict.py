@@ -61,10 +61,10 @@ def predict(model_file, vocab_file, sentence, sentence_pyconll=None):
         fasttext_embeddings = []
         for i, word_index in enumerate(words):
             if word_index.item() == unk_id:
-                print(f"'{sentence[i]}' is not in vocab")
-                if sentence[i] in ft.words:
-                    print(f"Found '{sentence[i]}' in fastText")
-                    fasttext_embeddings += [ft[sentence[i]]]
+                print(f"'{sentence[i].lower()}' is not in vocab")
+                if sentence[i].lower() in ft.words:
+                    print(f"Found '{sentence[i].lower()}' in fastText")
+                    fasttext_embeddings += [ft[sentence[i].lower()]]
                     mask_embeddings[i] = True
 
         fasttext_embeddings = torch.tensor(np.array(fasttext_embeddings)).to(device)
@@ -144,8 +144,8 @@ def fill_conllu(model_file, vocab_file, conll_input, conll_output):
         mask_embeddings = torch.zeros(words.shape, dtype=bool, device=device)
         for i, word_index in enumerate(words):
             if word_index.item() == unk_id:
-                if word_list[i] in ft.words:
-                    fasttext_embeddings += [ft[word_list[i]]]
+                if word_list[i].lower() in ft.words:
+                    fasttext_embeddings += [ft[word_list[i].lower()]]
                     mask_embeddings[i] = True
 
         if torch.any(mask_embeddings):
