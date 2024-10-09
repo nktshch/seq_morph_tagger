@@ -71,7 +71,7 @@ class Trainer(nn.Module):
         print(f"{len(self.test_loader)} batches in test")
 
 
-    def epoch_loops(self, ft=None, oov_pretrained_set=None):
+    def epoch_loops(self, oov_pretrained_set=None):
         for epoch in range(self.conf['max_epochs']):
             self.model.train()
             self.train_epoch()
@@ -79,7 +79,7 @@ class Trainer(nn.Module):
             if len(self.valid_loader) > 0:
                 self.model.eval()
                 with torch.no_grad():
-                    valid_accuracy, valid_loss = self.valid_epoch(ft, oov_pretrained_set)
+                    valid_accuracy, valid_loss = self.valid_epoch(oov_pretrained_set)
                 if valid_loss >= self.best_loss:
                     self.no_improv += 1
                     if self.no_improv >= self.conf['no_improv']:
@@ -119,7 +119,7 @@ class Trainer(nn.Module):
         # print("One train epoch complete")
 
 
-    def valid_epoch(self, ft, oov_pretrained_vocab):
+    def valid_epoch(self, oov_pretrained_vocab):
         progress_bar = tqdm(enumerate(self.valid_loader), total=len(self.valid_loader), colour='#bbbbff')
         running_error = 0.0
         correct, total = 0, 0
