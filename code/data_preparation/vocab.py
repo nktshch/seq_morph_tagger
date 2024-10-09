@@ -84,8 +84,8 @@ class Vocab:
             dimension (int, default 300): The dimension of embeddings.
         """
 
-        print("Loading fastText embeddings")
         if ft is None:
+            print("Loading fastText")
             ft = fasttext.load_model(self.conf['pretrained_embeddings'])
 
         self.embeddings = np.random.normal(scale=2.0 / (dimension + len(self.vocab['word-index'])),

@@ -71,7 +71,7 @@ class Trainer(nn.Module):
         print(f"{len(self.test_loader)} batches in test")
 
 
-    def epoch_loops(self, oov_pretrained_set=None):
+    def epoch_loops(self, oov_pretrained_vocab=None):
         for epoch in range(self.conf['max_epochs']):
             self.model.train()
             self.train_epoch()
@@ -79,7 +79,7 @@ class Trainer(nn.Module):
             if len(self.valid_loader) > 0:
                 self.model.eval()
                 with torch.no_grad():
-                    valid_accuracy, valid_loss = self.valid_epoch(oov_pretrained_set)
+                    valid_accuracy, valid_loss = self.valid_epoch(oov_pretrained_vocab)
                 if valid_loss >= self.best_loss:
                     self.no_improv += 1
                     if self.no_improv >= self.conf['no_improv']:
@@ -192,11 +192,15 @@ def calculate_accuracy(vocabulary, conf, predictions, targets, mask_embeddings):
     masked_predictions = masked_select(predictions.permute(1, 0),
                                        vocabulary.vocab["grammeme-index"][conf['EOS']])
 
-    for tag, target in zip(masked_predictions, targets.permute(1, 0)):
-        if target[0] != 0:
-            n_total += 1
-            n_correct += int(torch.equal(tag[tag.nonzero()], target[target.nonzero()]))
+    iteration_mask = targets[0].to(torch.bool)
+    for tag, target in zip(masked_predictions[iteration_mask], targets.permute(1, 0)[iteration_mask]):
+        n_total += 1
+        tag_nonzero = tag[tag.nonzero()]
+        target_nonzero = target[target.nonzero()]
+        equal = torch.equal(tag_nonzero, target_nonzero)
+        n_correct += int(equal)
 
+    # TODO: rewrite these loops
     # for tag, target in zip(masked_predictions[flattened_mask], targets.permute(1, 0)[flattened_mask]):
     #     if target[0] != 0:
     #         oov_total += 1
@@ -312,14 +316,9 @@ def masked_select(a, value):
                 [ 1.,  3.,  3.,  4.,  1.,  5.,  2.,  1.]])
     """
 
-    mask = []
-    rng = torch.arange(0, a.shape[1]).to(a.device)
-    for row in a:
-        equal = torch.isin(row, value)
-        if equal.nonzero().shape[0] != 0:
-            mask.append(torch.le(rng, equal.nonzero()[0]))
-        else:
-            mask.append(rng)
-
-    mask = torch.stack(mask)
-    return a * mask
+    first_occurrence = (a == value).cumsum(dim=1)
+    first_occurrence = first_occurrence.to(torch.bool)
+    padding = torch.zeros((a.shape[0], 1), dtype=torch.bool).to(a.device)
+    narrow = torch.narrow(first_occurrence, 1, 0, a.shape[1] - 1)
+    mask = torch.hstack((padding, narrow))
+    return a * (~mask)

@@ -80,7 +80,6 @@ def main():
         ft = fasttext.load_model(conf['pretrained_embeddings'])
         oov_pretrained_vocab = {}
         oov_pretrained_set = valid_set | test_set
-        print(len(oov_pretrained_set))
         for word in ft.words:
             if word.lower() in oov_pretrained_set:
                 oov_pretrained_vocab[word.lower()] = ft[word]
