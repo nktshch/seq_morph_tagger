@@ -57,7 +57,7 @@ class Trainer(nn.Module):
         self.test_loader = DataLoader(test_subset, batch_size=self.conf['sentence_eval_batch_size'],
                                       collate_fn=collate_batch) if test_subset else []
 
-        self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='sum')
+        self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='mean')
         self.optimizer = torch.optim.SGD(self.parameters(), lr=self.conf['learning_rate'])
 
         self.writer = SummaryWriter(log_dir=self.directory)

@@ -30,7 +30,7 @@ def parse_arguments():
     with open(args.config, 'r') as json_file:
         config = json.load(json_file)
 
-    if config['order'] not in ["direct", "reverse", "frequency"]:
+    if config['order'] not in ["direct", "reverse", "frequency", "reverse_frequency"]:
         raise ValueError(f"Unknown order of grammemes: {config['order']}")
 
     config['language'] = args.language

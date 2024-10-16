@@ -265,6 +265,16 @@ class Vocab:
                         grammeme_ids = [self.vocab["grammeme-index"][g] for g in grammeme_strings]
                         labels += [grammeme_ids]
 
+                    elif self.conf['order'] == 'reverse_frequency':
+                        grammeme_strings = []
+                        if word.upos is not None:
+                            grammeme_strings = ["POS=" + word.upos]
+                        grammeme_strings += [key + "=" + feat for key in word.feats for feat in word.feats[key]]
+                        grammeme_strings = sorted(grammeme_strings, reverse=True,
+                                                  key=lambda item: self.grammemes_by_freq_indices[item])
+                        grammeme_ids = [self.vocab["grammeme-index"][g] for g in grammeme_strings]
+                        labels += [grammeme_ids]
+
                     else:
                         raise ValueError(f"Unknown order of grammemes: {self.conf['order']}")
         else:

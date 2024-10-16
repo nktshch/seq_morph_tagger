@@ -71,6 +71,10 @@ class CustomDataset(Dataset):
             words = []
             for word in sentence:
                 if '.' not in word.id and '-' not in word.id:
-                    words += [word.form]
-                    self.words_set.add(word.form.lower())
+                    if word.form.isdigit():
+                        words += [self.conf['NUM']]
+                        self.words_set.add(self.conf['NUM'])
+                    else:
+                        words += [word.form]
+                        self.words_set.add(word.form.lower())
             self.sentences += [words]
