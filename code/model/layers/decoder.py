@@ -82,6 +82,6 @@ class Decoder(nn.Module):
 
         predictions = torch.stack(predictions)
         probabilities = torch.stack(probabilities)
-        # predictions has shape (max_label_length, batch_size * max_sentence_length)
-        # probabilities has shape (max_label_length, batch_size * max_sentence_length, grammemes_in_vocab)
+        # predictions has shape (max_label_length, max_sentence_length * batch_size)
+        # probabilities has shape (max_label_length, max_sentence_length * batch_size, grammemes_in_vocab)
         return predictions, probabilities

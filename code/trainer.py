@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
+from itertools import permutations
 from tqdm import tqdm
 import fasttext
 
@@ -71,7 +72,7 @@ class Trainer(nn.Module):
         print(f"{len(self.test_loader)} batches in test")
 
 
-    def epoch_loops(self, oov_pretrained_vocab=None):
+    def epoch_loops(self, oov_pretrained_vocab):
         for epoch in range(self.conf['max_epochs']):
             self.model.train()
             self.train_epoch()
@@ -106,7 +107,11 @@ class Trainer(nn.Module):
             _, probabilities = self.model(words_batch, chars_batch, labels_batch)
             targets = labels_batch[1:]  # slice is taken to ignore SOS token
 
-            loss = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            # probabilities has shape (max_label_length, max_sentence_length * batch_size, grammemes_in_vocab)
+            # targets has shape (max_label_length, max_sentence_length * batch_size)
+            print(self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0)))
+            # TODO: change to loss = calculate_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            loss = self.get_best_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.conf['clip'])
             self.optimizer.step()
@@ -123,8 +128,6 @@ class Trainer(nn.Module):
         progress_bar = tqdm(enumerate(self.valid_loader), total=len(self.valid_loader), colour='#bbbbff')
         running_error = 0.0
         correct, total = 0, 0
-        oov_correct, oov_total = 0, 0
-        vocab_correct, vocab_total = 0, 0
         for iteration, (words_batch, chars_batch, labels_batch, raw_sentences) in progress_bar:
             words_batch = words_batch.to(self.conf['device'])
             chars_batch = chars_batch.to(self.conf['device'])
@@ -149,22 +152,16 @@ class Trainer(nn.Module):
             targets = labels_batch[1:]  # slice is taken to ignore SOS token
             probabilities = probabilities[:len(targets)]
 
-            # correct_batch, total_batch, oov_correct_batch, oov_total_batch, vocab_correct_batch, vocab_total_batch = \
-            #     calculate_accuracy(self.vocab, self.conf, predictions, targets, mask_embeddings)
-            correct_batch, total_batch = calculate_accuracy(self.vocab, self.conf, predictions, targets, mask_embeddings)
+            correct_batch, total_batch = calculate_accuracy(self.vocab, self.conf, predictions, targets)
             correct += correct_batch
             total += total_batch
-            # oov_correct += oov_correct_batch
-            # oov_total += oov_total_batch
-            # vocab_correct += vocab_correct_batch
-            # vocab_total += vocab_total_batch
 
-            error = self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            # probabilities has shape (max_label_length, max_sentence_length * batch_size, grammemes_in_vocab)
+            # targets has shape (max_label_length, max_sentence_length * batch_size)
+            error = self.get_best_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             running_error += error.item() * total_batch
 
         valid_accuracy = correct / total
-        # oov_valid_accuracy = oov_correct / oov_total
-        # vocab_valid_accuracy = vocab_correct / vocab_total
         valid_loss = running_error / total
         self.writer.add_scalar("valid accuracy",
                                valid_accuracy,
@@ -174,21 +171,74 @@ class Trainer(nn.Module):
                                (self.current_epoch + 1) * len(self.valid_loader))
         print(f"EPOCH {self.current_epoch}")
         print(f"acc: {valid_accuracy}, loss: {valid_loss}")
-        # print(f"oov acc: {oov_valid_accuracy}")
-        # print(f"vocab acc: {vocab_valid_accuracy}")
         return valid_accuracy, valid_loss
 
 
-def calculate_accuracy(vocabulary, conf, predictions, targets, mask_embeddings):
+    def get_best_loss(self, probabilities, targets):
+        """Order-Agnostic Cross Entropy Loss, slow implementation"""
+        N = probabilities.shape[2]
+        best_loss = torch.inf
+        for perm in permutations(range(N)):
+            probabilities_perm = probabilities[:, :, perm]
+            loss_perm = self.loss(probabilities_perm, targets)
+            if loss_perm < best_loss:
+                best_loss = loss_perm
+
+        return best_loss
+
+
+    def calculate_loss(self, probabilities, targets):
+        nlll = nn.NLLLoss(reduction='none', ignore_index=0)
+        smax = nn.LogSoftmax(dim=1)
+
+        probabilities, target = torch.load("examples.pt")  # already permuted!
+        print(probabilities.shape, target.shape)
+
+        cross_loss = self.loss(probabilities, target)  # regular loss (for epsilon correction)
+
+        probabilities = smax(probabilities)  # log softmax
+
+        best_match = torch.zeros_like(target)  # best permutations will be here
+        for i in range(target.shape[0]):  # for 1 sequence in a batch
+            target_row = target[i]
+            n_nonpad = target_row.ne(0).sum()  # to exclude padding (change 0 to pad_id)
+            if n_nonpad == 0:  # skip if row is padding itself
+                continue
+            target_row = target_row[:n_nonpad]  # remove padding
+            probabilities_matrix = probabilities[i]  # probabilities for this sequence (59, max_label_length)
+            probabilities_matrix = probabilities_matrix[:, :n_nonpad]  # remove probabilities on padded labels
+
+            cost_matrix = -probabilities_matrix[target_row]  # get cost matrix for lsa
+            smooth_loss_numpy_T = cost_matrix.permute(1,
+                                                      0).detach().cpu().numpy()  # permute because of how lsa works, we need rows indices, not column
+
+            _, col_indices_T = lsa(
+                smooth_loss_numpy_T)  # T (transposed) means that these are columns only from lsa's perspective,
+            # they will be used as row indices
+            best_perm = target_row[col_indices_T]  # get rows in the best order (best permutation)
+            best_match[i, :n_nonpad] = best_perm  # add to the list of best permutations
+
+        smooth_loss = nlll(probabilities, best_match)  # loss can be computed with regular negative log likelihood
+
+        # TODO: calculate weighted sum of cross_loss and smooth_loss (like in the original code)
+
+        # loop below used to check that algorithm worked correctly and really found the best loss
+        # print(smooth_loss.sum())
+        # for i in range(smooth_loss.shape[0]):
+        #     sm = smooth_loss[i]
+        #     cr = cross_loss[i]
+        #     if sm.sum() > cr.sum():
+        #         print(i)
+        #         print(sm.sum(), cr.sum())
+
+
+def calculate_accuracy(vocabulary, conf, predictions, targets):
     """Metrics is a ratio of correctly predicted tags to total number of tags.
 
     All grammemes in a tag must be predicted correctly for it to count as correct.
     """
 
-    flattened_mask = mask_embeddings.permute(1, 0).reshape(-1)
     n_total, n_correct = 0, 0
-    oov_total, oov_correct = 0, 0
-    vocab_total, vocab_correct = 0, 0
     masked_predictions = masked_select(predictions.permute(1, 0),
                                        vocabulary.vocab["grammeme-index"][conf['EOS']])
 
@@ -200,19 +250,7 @@ def calculate_accuracy(vocabulary, conf, predictions, targets, mask_embeddings):
         equal = torch.equal(tag_nonzero, target_nonzero)
         n_correct += int(equal)
 
-    # TODO: rewrite these loops
-    # for tag, target in zip(masked_predictions[flattened_mask], targets.permute(1, 0)[flattened_mask]):
-    #     if target[0] != 0:
-    #         oov_total += 1
-    #         oov_correct += int(torch.equal(tag[tag.nonzero()], target[target.nonzero()]))
-    #
-    # for tag, target in zip(masked_predictions[~flattened_mask], targets.permute(1, 0)[~flattened_mask]):
-    #     if target[0] != 0:
-    #         vocab_total += 1
-    #         vocab_correct += int(torch.equal(tag[tag.nonzero()], target[target.nonzero()]))
-
     return n_correct, n_total
-    # return n_correct, n_total, oov_correct, oov_total, vocab_correct, vocab_total
 
 
 def collate_batch(batch_w_sentences, pad_id=0, sos_id=1, eos_id=2):

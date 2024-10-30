@@ -99,7 +99,7 @@ def main():
         model = Model(conf, vocab).to(conf['device'])
         trainer = Trainer(conf, model, train_data, valid_data, test_data,
                           run_number=run_number, subset_size=0).to(conf['device'])
-        trainer.epoch_loops(oov_pretrained_vocab)
+        trainer.epoch_loops(oov_pretrained_vocab=oov_pretrained_vocab)
 
         print("Training complete")
 

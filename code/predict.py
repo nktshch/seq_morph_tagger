@@ -228,7 +228,8 @@ def construct_df(conll_true, conll_predicted, uniq_words):
                 uniq = True if word_true.form.lower() in uniq_words else False
                 data += [(word_true.form, "POS=" + word_true.upos, "POS=" + word_predicted.upos, uniq, word_true.upos != word_predicted.upos)]
                 for key_true in list(word_true.feats):
-                    for feat_true, feat_predicted in zip_longest(word_true.feats[key_true], word_predicted.feats.get(key_true, [])):
+                    # zip_longest should be used instead
+                    for feat_true, feat_predicted in zip(word_true.feats[key_true], word_predicted.feats.get(key_true, [])):
                         if feat_predicted is None:
                             data += [(word_true.form, key_true + "=" + feat_true, '', uniq, True)]
                         else:
@@ -271,17 +272,16 @@ if __name__ == "__main__":
     # sentence_pyconll = pyconll.load.load_from_file("./Russian/test.conllu")[5]
     # predict("./Russian/seed_0/model.pt", "./Russian/vocab.pickle", sentence_, sentence_pyconll)
 
-    # fill_conllu("./Russian/seed_0/model.pt", "./Russian/vocab.pickle",
-    #             "./Russian/train.conllu", "./Russian/train_filled.conllu")
-    #
+
+
     # conllu_accuracy("./Russian/train.conllu", "./Russian/train_filled.conllu")
 
-    conf_, vocab_, model_ = load_model_vocab("./Russian/seed_0/model.pt", "./Russian/vocab.pickle")
-
-    uniq_words_ = get_uniq_words(conf_, vocab_, pyconll.load_from_file("./Russian/test.conllu"))
-    df_ = construct_df("./Russian/test.conllu", "./Russian/test_filled.conllu", uniq_words_)
-    print(calculate_accuracy_df(df_))
-    print(conllu_accuracy("./Russian/test.conllu", "./Russian/test_filled.conllu"))
-
+    for i in range(5):
+        conf_, vocab_, model_ = load_model_vocab(f"./Russian/seed_{i}/model.pt", "./Russian/vocab.pickle")
+        uniq_words_ = get_uniq_words(conf_, vocab_, pyconll.load_from_file("./Russian/test.conllu"))
+        fill_conllu(conf_, vocab_, model_,
+                    "./Russian/test.conllu", f"./Russian/test_{i}_filled.conllu")
+        df_ = construct_df("./Russian/test.conllu", f"./Russian/test_{i}_filled.conllu", uniq_words_)
+        print(calculate_accuracy_df(df_))
 
 
