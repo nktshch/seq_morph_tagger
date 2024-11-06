@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
-from itertools import permutations
+from scipy.optimize import linear_sum_assignment as lsa
 from tqdm import tqdm
 import fasttext
 
@@ -58,7 +58,8 @@ class Trainer(nn.Module):
         self.test_loader = DataLoader(test_subset, batch_size=self.conf['sentence_eval_batch_size'],
                                       collate_fn=collate_batch) if test_subset else []
 
-        self.loss = nn.CrossEntropyLoss(ignore_index=0, reduction='mean')
+        self.nllloss = nn.NLLLoss(reduction='mean', ignore_index=0)
+        self.logsoftmax = nn.LogSoftmax(dim=1)
         self.optimizer = torch.optim.SGD(self.parameters(), lr=self.conf['learning_rate'])
 
         self.writer = SummaryWriter(log_dir=self.directory)
@@ -109,9 +110,8 @@ class Trainer(nn.Module):
 
             # probabilities has shape (max_label_length, max_sentence_length * batch_size, grammemes_in_vocab)
             # targets has shape (max_label_length, max_sentence_length * batch_size)
-            print(self.loss(probabilities.permute(1, 2, 0), targets.permute(1, 0)))
-            # TODO: change to loss = calculate_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
-            loss = self.get_best_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+
+            loss = self.calculate_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.conf['clip'])
             self.optimizer.step()
@@ -158,7 +158,7 @@ class Trainer(nn.Module):
 
             # probabilities has shape (max_label_length, max_sentence_length * batch_size, grammemes_in_vocab)
             # targets has shape (max_label_length, max_sentence_length * batch_size)
-            error = self.get_best_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            error = self.calculate_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
             running_error += error.item() * total_batch
 
         valid_accuracy = correct / total
@@ -174,62 +174,33 @@ class Trainer(nn.Module):
         return valid_accuracy, valid_loss
 
 
-    def get_best_loss(self, probabilities, targets):
-        """Order-Agnostic Cross Entropy Loss, slow implementation"""
-        N = probabilities.shape[2]
-        best_loss = torch.inf
-        for perm in permutations(range(N)):
-            probabilities_perm = probabilities[:, :, perm]
-            loss_perm = self.loss(probabilities_perm, targets)
-            if loss_perm < best_loss:
-                best_loss = loss_perm
-
-        return best_loss
-
-
     def calculate_loss(self, probabilities, targets):
-        nlll = nn.NLLLoss(reduction='none', ignore_index=0)
-        smax = nn.LogSoftmax(dim=1)
+        """
+        Calculates Order-Agnostic Cross Entropy Loss
+        """
+        probabilities = self.logsoftmax(probabilities)
 
-        probabilities, target = torch.load("examples.pt")  # already permuted!
-        print(probabilities.shape, target.shape)
-
-        cross_loss = self.loss(probabilities, target)  # regular loss (for epsilon correction)
-
-        probabilities = smax(probabilities)  # log softmax
-
-        best_match = torch.zeros_like(target)  # best permutations will be here
-        for i in range(target.shape[0]):  # for 1 sequence in a batch
-            target_row = target[i]
-            n_nonpad = target_row.ne(0).sum()  # to exclude padding (change 0 to pad_id)
+        best_match = torch.zeros_like(targets)  # best permutations are stored here
+        for i in range(targets.shape[0]):  # for 1 sequence in a batch
+            target_row = targets[i]
+            n_nonpad = target_row.ne(0).sum()  # to exclude padding (0 is pad_id)
             if n_nonpad == 0:  # skip if row is padding itself
                 continue
             target_row = target_row[:n_nonpad]  # remove padding
-            probabilities_matrix = probabilities[i]  # probabilities for this sequence (59, max_label_length)
+            probabilities_matrix = probabilities[i]  # probabilities for this sequence (grammemes_in_vocab, max_label_length)
             probabilities_matrix = probabilities_matrix[:, :n_nonpad]  # remove probabilities on padded labels
 
             cost_matrix = -probabilities_matrix[target_row]  # get cost matrix for lsa
-            smooth_loss_numpy_T = cost_matrix.permute(1,
-                                                      0).detach().cpu().numpy()  # permute because of how lsa works, we need rows indices, not column
+            cost_matrix_numpy_T = cost_matrix.permute(1, 0).detach().cpu().numpy()
+            # permute because of how lsa works, we need rows indices, not column
 
-            _, col_indices_T = lsa(
-                smooth_loss_numpy_T)  # T (transposed) means that these are columns only from lsa's perspective,
-            # they will be used as row indices
+            _, col_indices_T = lsa(cost_matrix_numpy_T)
+            # T (transposed) means that these are columns only from lsa's perspective, they will be used as row indices
             best_perm = target_row[col_indices_T]  # get rows in the best order (best permutation)
             best_match[i, :n_nonpad] = best_perm  # add to the list of best permutations
 
-        smooth_loss = nlll(probabilities, best_match)  # loss can be computed with regular negative log likelihood
-
-        # TODO: calculate weighted sum of cross_loss and smooth_loss (like in the original code)
-
-        # loop below used to check that algorithm worked correctly and really found the best loss
-        # print(smooth_loss.sum())
-        # for i in range(smooth_loss.shape[0]):
-        #     sm = smooth_loss[i]
-        #     cr = cross_loss[i]
-        #     if sm.sum() > cr.sum():
-        #         print(i)
-        #         print(sm.sum(), cr.sum())
+        smooth_loss = self.nllloss(probabilities, best_match)  # can be computed with regular negative log likelihood
+        return smooth_loss
 
 
 def calculate_accuracy(vocabulary, conf, predictions, targets):
