@@ -1,5 +1,6 @@
 {
     "order": "direct",
+    "loss": "oaxe",
     "singleton_substitution": 0.5,
     "word_embeddings_dimension": 300,
     "char_embeddings_dimension": 100,

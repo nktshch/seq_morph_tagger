@@ -33,6 +33,9 @@ def parse_arguments():
     if config['order'] not in ["direct", "reverse", "frequency", "reverse_frequency"]:
         raise ValueError(f"Unknown order of grammemes: {config['order']}")
 
+    if config['loss'] not in ["xe", "oaxe"]:
+        raise ValueError(f"Unknown loss: {config['loss']}")
+
     config['language'] = args.language
     config['model'] = args.model
     config['pretrained_embeddings'] = args.pretrained_embeddings

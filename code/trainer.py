@@ -58,7 +58,8 @@ class Trainer(nn.Module):
         self.test_loader = DataLoader(test_subset, batch_size=self.conf['sentence_eval_batch_size'],
                                       collate_fn=collate_batch) if test_subset else []
 
-        self.nllloss = nn.NLLLoss(reduction='mean', ignore_index=0)
+        self.xe_loss = nn.CrossEntropyLoss(reduction='mean', ignore_index=0)
+        self.nll_loss = nn.NLLLoss(reduction='mean', ignore_index=0)
         self.logsoftmax = nn.LogSoftmax(dim=1)
         self.optimizer = torch.optim.SGD(self.parameters(), lr=self.conf['learning_rate'])
 
@@ -110,8 +111,12 @@ class Trainer(nn.Module):
 
             # probabilities has shape (max_label_length, max_sentence_length * batch_size, grammemes_in_vocab)
             # targets has shape (max_label_length, max_sentence_length * batch_size)
-
-            loss = self.calculate_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            if self.conf['loss'] == "xe":
+                loss = self.xe_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            elif self.conf['loss'] == "oaxe":
+                loss = self.oaxe_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            else:
+                raise ValueError(f"Unknown loss: {self.conf['loss']}")
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.conf['clip'])
             self.optimizer.step()
@@ -158,7 +163,12 @@ class Trainer(nn.Module):
 
             # probabilities has shape (max_label_length, max_sentence_length * batch_size, grammemes_in_vocab)
             # targets has shape (max_label_length, max_sentence_length * batch_size)
-            error = self.calculate_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            if self.conf['loss'] == "xe":
+                error = self.xe_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            elif self.conf['loss'] == "oaxe":
+                error = self.oaxe_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+            else:
+                raise ValueError(f"Unknown loss: {self.conf['loss']}")
             running_error += error.item() * total_batch
 
         valid_accuracy = correct / total
@@ -174,7 +184,7 @@ class Trainer(nn.Module):
         return valid_accuracy, valid_loss
 
 
-    def calculate_loss(self, probabilities, targets):
+    def oaxe_loss(self, probabilities, targets):
         """
         Calculates Order-Agnostic Cross Entropy Loss
         """
@@ -199,7 +209,7 @@ class Trainer(nn.Module):
             best_perm = target_row[col_indices_T]  # get rows in the best order (best permutation)
             best_match[i, :n_nonpad] = best_perm  # add to the list of best permutations
 
-        smooth_loss = self.nllloss(probabilities, best_match)  # can be computed with regular negative log likelihood
+        smooth_loss = self.nll_loss(probabilities, best_match)  # can be computed with regular negative log likelihood
         return smooth_loss
 
 
