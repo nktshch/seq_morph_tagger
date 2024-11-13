@@ -36,6 +36,8 @@ def parse_arguments():
     if config['loss'] not in ["xe", "oaxe"]:
         raise ValueError(f"Unknown loss: {config['loss']}")
 
+    config['teacher_forcing'] = False if config['loss'] == "oaxe" else True
+
     config['language'] = args.language
     config['model'] = args.model
     config['pretrained_embeddings'] = args.pretrained_embeddings

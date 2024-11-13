@@ -62,7 +62,7 @@ class Decoder(nn.Module):
         ck = decoder_cell
         predictions = []
         probabilities = []
-        if labels_batch is not None:
+        if labels_batch is not None and self.conf['teacher_forcing'] is True:
             for grammemes in labels:
                 hk, ck = self.grammemeLSTMcell(grammemes, (hk, ck))
                 probabilities_batch = self.linear(hk)

@@ -108,15 +108,20 @@ class Trainer(nn.Module):
             self.optimizer.zero_grad()
             _, probabilities = self.model(words_batch, chars_batch, labels_batch)
             targets = labels_batch[1:]  # slice is taken to ignore SOS token
-
+            probabilities = probabilities[:len(targets)]
             # probabilities has shape (max_label_length, max_sentence_length * batch_size, grammemes_in_vocab)
             # targets has shape (max_label_length, max_sentence_length * batch_size)
+
+            targets = targets.permute(1, 0)
+            probabilities = probabilities.permute(1, 2, 0)
+
             if self.conf['loss'] == "xe":
-                loss = self.xe_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+                loss = self.xe_loss(probabilities, targets)
             elif self.conf['loss'] == "oaxe":
-                loss = self.oaxe_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
+                loss, _ = self.oaxe_loss(probabilities, targets)
             else:
                 raise ValueError(f"Unknown loss: {self.conf['loss']}")
+
             loss.backward()
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.conf['clip'])
             self.optimizer.step()
@@ -156,19 +161,24 @@ class Trainer(nn.Module):
             predictions, probabilities = self.model(words_batch, chars_batch, None, oov=oov)
             targets = labels_batch[1:]  # slice is taken to ignore SOS token
             probabilities = probabilities[:len(targets)]
+            # probabilities has shape (max_label_length, max_sentence_length * batch_size, grammemes_in_vocab)
+            # targets has shape (max_label_length, max_sentence_length * batch_size)
+
+            targets = targets.permute(1, 0)
+            predictions = predictions.permute(1, 0)
+            probabilities = probabilities.permute(1, 2, 0)
+
+            if self.conf['loss'] == "xe":
+                error = self.xe_loss(probabilities, targets)
+            elif self.conf['loss'] == "oaxe":
+                error, best_permutations = self.oaxe_loss(probabilities, targets)
+                predictions = torch.gather(predictions, 1, best_permutations)
+            else:
+                raise ValueError(f"Unknown loss: {self.conf['loss']}")
 
             correct_batch, total_batch = calculate_accuracy(self.vocab, self.conf, predictions, targets)
             correct += correct_batch
             total += total_batch
-
-            # probabilities has shape (max_label_length, max_sentence_length * batch_size, grammemes_in_vocab)
-            # targets has shape (max_label_length, max_sentence_length * batch_size)
-            if self.conf['loss'] == "xe":
-                error = self.xe_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
-            elif self.conf['loss'] == "oaxe":
-                error = self.oaxe_loss(probabilities.permute(1, 2, 0), targets.permute(1, 0))
-            else:
-                raise ValueError(f"Unknown loss: {self.conf['loss']}")
             running_error += error.item() * total_batch
 
         valid_accuracy = correct / total
@@ -184,13 +194,15 @@ class Trainer(nn.Module):
         return valid_accuracy, valid_loss
 
 
-    def oaxe_loss(self, probabilities, targets):
+    def oaxe_loss(self, probabilities_, targets):
         """
         Calculates Order-Agnostic Cross Entropy Loss
         """
-        probabilities = self.logsoftmax(probabilities)
+        # probabilities has shape (max_sentence_length * batch_size, grammemes_in_vocab, max_label_length)
+        # targets has shape (max_sentence_length * batch_size, max_label_length)
+        probabilities = self.logsoftmax(probabilities_)
 
-        best_match = torch.zeros_like(targets)  # best permutations are stored here
+        best_permutations_ = torch.tensor(range(probabilities_.shape[2])).to(targets).repeat((probabilities_.shape[0], 1))
         for i in range(targets.shape[0]):  # for 1 sequence in a batch
             target_row = targets[i]
             n_nonpad = target_row.ne(0).sum()  # to exclude padding (0 is pad_id)
@@ -201,16 +213,19 @@ class Trainer(nn.Module):
             probabilities_matrix = probabilities_matrix[:, :n_nonpad]  # remove probabilities on padded labels
 
             cost_matrix = -probabilities_matrix[target_row]  # get cost matrix for lsa
-            cost_matrix_numpy_T = cost_matrix.permute(1, 0).detach().cpu().numpy()
+            cost_matrix_numpy = cost_matrix.detach().cpu().numpy()
             # permute because of how lsa works, we need rows indices, not column
 
-            _, col_indices_T = lsa(cost_matrix_numpy_T)
-            # T (transposed) means that these are columns only from lsa's perspective, they will be used as row indices
-            best_perm = target_row[col_indices_T]  # get rows in the best order (best permutation)
-            best_match[i, :n_nonpad] = best_perm  # add to the list of best permutations
+            _, col_indices = lsa(cost_matrix_numpy)
+            best_permutations_[i, :n_nonpad] = torch.tensor(col_indices).to(best_permutations_)
 
-        smooth_loss = self.nll_loss(probabilities, best_match)  # can be computed with regular negative log likelihood
-        return smooth_loss
+        best_permutations = best_permutations_[:, None, :]
+        best_permutations = best_permutations.expand_as(probabilities)
+
+        probabilities = torch.gather(probabilities, 2, best_permutations)
+
+        smooth_loss = self.nll_loss(probabilities, targets)  # can be computed with regular negative log likelihood
+        return smooth_loss, best_permutations_
 
 
 def calculate_accuracy(vocabulary, conf, predictions, targets):
@@ -220,11 +235,10 @@ def calculate_accuracy(vocabulary, conf, predictions, targets):
     """
 
     n_total, n_correct = 0, 0
-    masked_predictions = masked_select(predictions.permute(1, 0),
-                                       vocabulary.vocab["grammeme-index"][conf['EOS']])
+    masked_predictions = masked_select(predictions, vocabulary.vocab["grammeme-index"][conf['EOS']])
 
-    iteration_mask = targets[0].to(torch.bool)
-    for tag, target in zip(masked_predictions[iteration_mask], targets.permute(1, 0)[iteration_mask]):
+    iteration_mask = targets[:, 0].to(torch.bool)
+    for tag, target in zip(masked_predictions[iteration_mask], targets[iteration_mask]):
         n_total += 1
         tag_nonzero = tag[tag.nonzero()]
         target_nonzero = target[target.nonzero()]
