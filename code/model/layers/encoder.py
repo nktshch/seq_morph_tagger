@@ -25,12 +25,23 @@ class Encoder(nn.Module):
         # from_pretrained outputs only torch.float64
         self.word_embeddings = nn.Embedding.from_pretrained(torch.from_numpy(self.embeddings), freeze=False).float()
         self.char_embeddings = nn.Embedding(len(self.vocab.vocab['char-index']), self.conf["char_embeddings_dimension"])
+        nn.init.xavier_uniform_(self.char_embeddings.weight)
         self.charLSTM = nn.LSTM(input_size=self.conf['char_embeddings_dimension'],
                                 hidden_size=self.conf['char_LSTM_hidden'],
                                 bidirectional=self.conf['char_LSTM_bidirectional'], batch_first=True)
+        for name, param in self.charLSTM.named_parameters():
+            if "weight" in name:
+                nn.init.xavier_uniform_(param.data)
+            elif "bias" in name:
+                nn.init.zeros_(param.data)
         self.wordLSTMcell = nn.LSTMCell(input_size=(self.conf['word_embeddings_dimension'] +
                                                     self.conf['char_LSTM_hidden'] * self.conf['char_LSTM_directions']),
                                         hidden_size=self.conf['word_LSTM_hidden'])
+        for name, param in self.wordLSTMcell.named_parameters():
+            if "weight" in name:
+                nn.init.xavier_uniform_(param.data)
+            elif "bias" in name:
+                nn.init.zeros_(param.data)
         self.wordDropout_input = nn.Dropout(p=self.conf['word_LSTM_input_dropout'])
         self.wordDropout_state = nn.Dropout(p=self.conf['word_LSTM_state_dropout'])
         self.wordDropout_output = nn.Dropout(p=self.conf['word_LSTM_output_dropout'])

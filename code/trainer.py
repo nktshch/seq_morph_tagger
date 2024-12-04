@@ -205,7 +205,7 @@ class Trainer(nn.Module):
         best_permutations_ = torch.tensor(range(probabilities_.shape[2])).to(targets).repeat((probabilities_.shape[0], 1))
         for i in range(targets.shape[0]):  # for 1 sequence in a batch
             target_row = targets[i]
-            n_nonpad = target_row.ne(0).sum()  # to exclude padding (0 is pad_id)
+            n_nonpad = target_row.ne(0).sum() - 1 # to exclude padding and eos token (0 is pad_id)
             if n_nonpad == 0:  # skip if row is padding itself
                 continue
             target_row = target_row[:n_nonpad]  # remove padding

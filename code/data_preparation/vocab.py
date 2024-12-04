@@ -115,6 +115,7 @@ class Vocab:
                         wordforms.add(self.conf['NUM'])
                     else:
                         wordforms.add(token.form.lower())
+                    # wordforms.add(token.form)
         wordforms.add(self.conf['NUM'])
         wordforms = [self.conf['PAD'], self.conf['UNK']] + sorted(list(wordforms))
         return get_dictionaries(wordforms)
@@ -135,7 +136,7 @@ class Vocab:
         Returns:
             tuple: Dictionaries with grammeme->index and index->grammeme pairs.
         """
-        
+
         grammemes = set()
         from collections import defaultdict
         frequencies = defaultdict(int)
@@ -201,7 +202,7 @@ class Vocab:
         singletons = [token for token, cnt in counter.items() if cnt == 1]
         return get_dictionaries(singletons)
 
-    def sentence_to_indices(self, sentence, sentence_pyconll=None,
+    def sentence_to_indices(self, sentence, sentence_pyconll=None, training=True,
                             unk_word_id=1, unk_char_id=1, unk_grammeme_id=3):
         """Returns indices of words, chars, and grammemes for a sentence. Used by CustomDataset and in predict.
 
@@ -216,6 +217,7 @@ class Vocab:
             sentence_pyconll (pyconll.unit.conll.Conll, default None): Sentence in pyconll format. Used for grammemes.
                 During inference, there will be no pyconll sentences, which means that method should return list
                 of n_words empty lists as labels.
+            training (bool, default True): If True, singletons will randomly be substituted by unk token.
             unk_word_id (int, default 1): The id of the unk word token in dictionary.
             unk_char_id (int, default 1): The id of the unk char token in dictionary.
             unk_grammeme_id (int, default 3): The id of the unk grammeme token in dictionary.
@@ -226,7 +228,7 @@ class Vocab:
         for word in sentence:
             if word.isdigit():
                 word_ids = [self.vocab["word-index"][self.conf['NUM']]]
-            elif word.lower() in self.vocab["singleton-index"].keys() and np.random.rand() < self.conf["singleton_substitution"]:
+            elif training is True and word.lower() in self.vocab["singleton-index"].keys() and np.random.rand() < self.conf["singleton_substitution"]:
                 word_ids = [self.vocab["word-index"][self.conf['UNK']]]
             else:
                 word_ids = [self.vocab["word-index"].get(word.lower(), unk_word_id)]

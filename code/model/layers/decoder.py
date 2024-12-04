@@ -22,8 +22,14 @@ class Decoder(nn.Module):
         self.sos_id = sos_id
         self.grammeme_embeddings = nn.Embedding(len(self.vocab.vocab['grammeme-index']),
                                                 self.conf["grammeme_embeddings_dimension"])
+        nn.init.xavier_uniform_(self.grammeme_embeddings.weight)
         self.grammemeLSTMcell = nn.LSTMCell(input_size=self.conf['grammeme_embeddings_dimension'],
                                             hidden_size=self.conf['grammeme_LSTM_hidden'])
+        for name, param in self.grammemeLSTMcell.named_parameters():
+            if "weight" in name:
+                nn.init.xavier_uniform_(param.data)
+            elif "bias" in name:
+                nn.init.zeros_(param.data)
         self.grammemeDropout = nn.Dropout(p=self.conf['grammeme_LSTM_input_dropout'])
         self.linear = nn.Linear(in_features=self.conf['grammeme_LSTM_hidden'],
                                 out_features=len(self.vocab.vocab['grammeme-index']))

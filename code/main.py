@@ -67,14 +67,14 @@ def main():
     train_data = CustomDataset(conf, vocab, conf['train_files'])
 
     if conf['valid_files']:
-        valid_data = CustomDataset(conf, vocab, conf['valid_files'])
+        valid_data = CustomDataset(conf, vocab, conf['valid_files'], training=False)
         valid_set = valid_data.words_set
     else:
         valid_data = None
         valid_set = set()
 
     if conf['test_files']:
-        test_data = CustomDataset(conf, vocab, conf['test_files'])
+        test_data = CustomDataset(conf, vocab, conf['test_files'], training=False)
         test_set = test_data.words_set
     else:
         test_data = None

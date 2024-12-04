@@ -23,6 +23,7 @@ class CustomDataset(Dataset):
         conf (dict): Dictionary with configuration parameters.
         vocab (Vocab): Instance of class containing vocabulary.
         files (list): List of .conllu files strings.
+        training (bool, default True): Whether it is a training dataset. Used in __getitem__() method.
 
     Attributes:
         sentences_pyconll: Sentences in CONLL-U format.
@@ -33,10 +34,11 @@ class CustomDataset(Dataset):
         >>> print(dataset.vocab.vocab["index-word"][dataset[66][0][8][0]])
     """
 
-    def __init__(self, conf, vocab, files):
+    def __init__(self, conf, vocab, files, training=True):
         self.conf = conf
         self.vocab = vocab
         self.files = files
+        self.training = training
         self.sentences_pyconll = None
         self.sentences = []
         self.words_set = set()
@@ -49,8 +51,7 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, index):
         """Returns indices of words, chars, and grammemes for a sentence with a given index."""
-        words, labels = self.vocab.sentence_to_indices(self.sentences[index],
-                                                       self.sentences_pyconll[index])
+        words, labels = self.vocab.sentence_to_indices(self.sentences[index], self.sentences_pyconll[index], self.training)
         return (words, labels), self.sentences[index]
 
     def get_all_sentences(self):
