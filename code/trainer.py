@@ -66,7 +66,7 @@ class Trainer(nn.Module):
         self.writer = SummaryWriter(log_dir=self.directory)
         self.current_epoch = 0
         self.print_every = 20  # write to log every so many iteration
-        self.best_loss = torch.inf
+        self.best_accuracy = 0
         self.no_improv = 0
 
         print(f"{len(self.train_loader)} batches in train")
@@ -83,14 +83,14 @@ class Trainer(nn.Module):
                 self.model.eval()
                 with torch.no_grad():
                     valid_accuracy, valid_loss = self.valid_epoch(oov_pretrained_vocab)
-                if valid_loss >= self.best_loss:
+                if valid_accuracy <= self.best_accuracy:
                     self.no_improv += 1
                     if self.no_improv >= self.conf['no_improv']:
-                        print(f"No improvement for {self.conf['no_improv']} epochs, stopping early")
+                        print(f"No improvement in accuracy for {self.conf['no_improv']} epochs, stopping early")
                         break
                 else:
                     self.no_improv = 0
-                    self.best_loss = valid_loss
+                    self.best_accuracy = valid_accuracy
                     torch.save([self.conf, self.model.state_dict()],
                                f"{self.directory}/model.pt")
                 self.current_epoch += 1
