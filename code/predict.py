@@ -59,7 +59,7 @@ def fill_conllu(conf, vocab, model, uniq_words, conll_input, conll_output):
 
     print(f"{len(uniq_words)} oov words")
     print("Loading fastText...")
-    ft = fasttext.load_model("./filled_conllu/cc.ru.300.bin")
+    ft = fasttext.load_model("./filled_conllu/wiki.ru.bin")
     oov_pretrained_vocab = {}
     for word in ft.words:
         if word.lower() in uniq_words:
@@ -132,7 +132,14 @@ def get_uniq_words(conf, vocab, conll):
 
 
 def construct_df(conll_true, conll_predicted, uniq_words):
-    print(len(uniq_words))
+    """Constructs DataFrame according to ground truth and model predictions.
+
+    Args:
+        conll_true (str): Ground truth file from UD library.
+        conll_predicted (str): File filled by model.
+        uniq_words (set): Set of oov words.
+
+    """
     conll_true = pyconll.load_from_file(conll_true)
     conll_predicted = pyconll.load_from_file(conll_predicted)
     data = []
@@ -198,6 +205,7 @@ def analyze_df(df):
     #           f"{len(category_df['error_' + cat]) / len(category_df[cat]):.3f}")
     # print(error_vocab_df)
 
+
 def calculate_accuracy_df(df):
     from sklearn.metrics import accuracy_score
     return OrderedDict(
@@ -218,7 +226,41 @@ def calculate_accuracy_df(df):
     )
 
 
-def evaluate_models():
+def analyze_results():
+    results_folder = "./filled_conllu"
+    p = Path(results_folder)
+
+
+    params = ['-'.join(x.stem.split('-')[1:-1]) for x in p.glob("results-*-0*")]
+    keys = []
+    for param in params:
+        results = []
+        seeds = [str(x) for x in p.glob(f"results-{param}-*")]
+        for seed in seeds:
+            with open(seed, "r") as s:
+                lines = s.readlines()[1:]
+                results.append([float(v.split(': ')[1]) for v in lines])
+                if len(keys) == 0:
+                    keys = [k.split(': ')[0] for k in lines]
+        results = np.array(results)
+        mean = results.mean(axis=0)
+        std = results.std(axis=0)
+
+        with open(f"{results_folder}/mean_std-{param}.txt", "w+") as file:
+            file.write(f"{param}\n")
+            for key, m_, s_ in zip(keys, mean, std):
+                file.write(f"{key}: {m_:.5} ± {s_:.5}\n")
+
+
+def evaluate_models(language="Russian", language_short="ru", dataset="dev"):
+    """Uses trained models to fill conllu files, then evaluates metrics and writes results to .txt files.
+
+    Args:
+        language (str, default 'Russian'): full language name as in UD library, but without 'UD_' prefix,
+            e.g. 'Russian', 'Russian-SynTagRus'.
+        language_short (str, default 'ru'): short language name as in conllu files, e.g. 'ru', 'ru_syntagrus'.
+        dataset (str, default 'dev'): 'dev' or 'test'.
+    """
     trained_models_folder = "./trained_models"
 
     p = Path(trained_models_folder)
@@ -226,46 +268,31 @@ def evaluate_models():
     # temp = pathlib.PosixPath
     # pathlib.PosixPath = pathlib.WindowsPath
     for seed_number in range(5):
-        model_paths = [str(x) for x in p.glob(f"*direct_order*/Russian-SynTagRus/seed_{seed_number}/model.pt")]
-        vocab_paths = [str(x) for x in p.glob("*/Russian-SynTagRus/vocab.pickle")]
+        model_paths = [str(x) for x in p.glob(f"*/{language}/seed_{seed_number}/model.pt")]
+        vocab_paths = [str(x) for x in p.glob(f"*/{language}/vocab.pickle")]
 
         for model_path, vocab_path in zip(model_paths, vocab_paths):
             model_name = model_path.split('\\')[1]
             print(f"{model_name} run {seed_number}")
             conf, vocab, model = load_model_vocab(model_path, vocab_path)
             # pathlib.PosixPath = temp
-            uniq_words = get_uniq_words(conf, vocab, pyconll.load_from_file("./data/UD_Russian-SynTagRus/ru_syntagrus-ud-dev.conllu"))
-            fill_conllu(conf, vocab, model, uniq_words, "./filled_conllu/Russian-SynTagRus/ru_syntagrus-ud-dev.conllu",
-                        f"./filled_conllu/Russian-SynTagRus/ru_syntagrus-ud-dev_{model_name}_{seed_number}.conllu")
-            df = construct_df("./filled_conllu/Russian-SynTagRus/ru_syntagrus-ud-dev.conllu",
-                              f"./filled_conllu/Russian-SynTagRus/ru_syntagrus-ud-dev_{model_name}_{seed_number}.conllu", uniq_words)
 
-            analyze_df(df)
+            conll_input = f"./filled_conllu/{language}/{language_short}-ud-{dataset}.conllu"
+            conll_output = f"./filled_conllu/{language}/{language_short}-ud-{dataset}_{model_name}_{seed_number}.conllu"
 
-            with open(f"./filled_conllu/results_dev_syntagrus_{seed_number}.txt", "w+") as file:
-                file.write(f"\n{model_name}\n")
+            uniq_words = get_uniq_words(conf, vocab, pyconll.load_from_file(conll_input))
+            fill_conllu(conf, vocab, model, uniq_words, conll_input, conll_output)
+            df = construct_df(conll_input, conll_output, uniq_words)
+
+            # analyze_df(df)
+
+            with open(f"./filled_conllu/results-{language_short}-{dataset}-{model_name}-{seed_number}.txt", "w+") as file:
+                file.write(f"{language}, {dataset}, {model_name}\n")
                 results = calculate_accuracy_df(df)
                 for key in results:
                     file.write(f"{key}: {results[key]:.5}\n")
 
-    # model_path = "./trained_models/direct_order/Russian/seed_0/model.pt"
-    # vocab_path = "./trained_models/direct_order/Russian/vocab.pickle"
-    # conf, vocab, model = load_model_vocab(model_path, vocab_path)
-    #
-    # model.to(device)
-    # model.eval()
-    #
-    # uniq_words = get_uniq_words(conf, vocab, pyconll.load_from_file("./data/UD_Russian/ru-ud-dev.conllu"))
-    # fill_conllu(conf, vocab, model, uniq_words, "./filled_conllu/Russian/ru-ud-dev.conllu",
-    #             f"./filled_conllu/Russian/ru-ud-dev_direct_order_0b.conllu")
-    # df = construct_df("./filled_conllu/Russian/ru-ud-dev.conllu",
-    #                   f"./filled_conllu/Russian/ru-ud-dev_direct_order_0b.conllu", uniq_words)
-    # results = calculate_accuracy_df(df)
-    # for key in results:
-    #     print(f"{key}: {results[key]:.5}")
-
 
 if __name__ == "__main__":
     evaluate_models()
-# TODO: check that ABSOLUTELY everything is as in author's code and paper. Mark questionable places. Possible:
-# pyconll loading data, metrics, padding learning, scale factor, loss function, default parameters in torch and tf
+    analyze_results()
