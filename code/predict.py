@@ -56,8 +56,8 @@ def predictions_to_grammemes(vocabulary, predictions):
 
 
 def predict_sentence(sentence, output):
-    conf, vocab, model = load_model_vocab("./trained_models/direct/Russian/seed_0/model.pt",
-                                          "./trained_models/direct/Russian/vocab.pickle")
+    conf, vocab, model = load_model_vocab("./trained_models/order_agnostic/Russian-SynTagRus/seed_0/model.pt",
+                                          "./trained_models/order_agnostic/Russian-SynTagRus/vocab.pickle")
     word_list = re.findall(r"\b\w+(?:-\w+)*\b|[^\w\s]", sentence)
     print(word_list)
 
@@ -156,41 +156,60 @@ def fill_conllu(conf, vocab, model, uniq_words, conll_input, conll_output):
                 predictions, probabilities = model(words, chars, None, oov=oov)
             grammemes = predictions_to_grammemes(vocab.vocab, predictions.permute(1, 0))
 
-            for label, token in zip(grammemes, sentence):
+            index = 0
+            for token in sentence:
                 if '.' not in token.id and '-' not in token.id:
+                    label = grammemes[index]
+                    index += 1
                     txt.write(f"{token.form} -")
                     for g in label:
                         if g == conf["EOS"]:
                             break
                         txt.write(f" {g}")
                     txt.write("\n")
-                    # other_grammemes = [g for g in label if "POS" not in g]
-                    # pos_grammeme = next(iter([g for g in label if "POS" in g]), "POS=Did_not_predict")
-                    # token.upos = pos_grammeme[4:]
-                    # feats = defaultdict(list)
-                    # for grammeme in other_grammemes:
-                    #     if grammeme == conf["EOS"]:
-                    #         break
-                    #     key, feat = grammeme.split("=")
-                    #     feats[key] += [feat]
-                    # token.feats = feats
+                    other_grammemes = [g for g in label if "POS" not in g]
+                    pos_grammeme = next(iter([g for g in label if "POS" in g]), "POS=Did_not_predict")
+                    token.upos = pos_grammeme[4:]
+                    feats = defaultdict(list)
+                    for grammeme in other_grammemes:
+                        if grammeme == conf["EOS"]:
+                            break
+                        key, feat = grammeme.split("=")
+                        feats[key] += [feat]
+                    token.feats = feats
 
-    # with open(conll_output, 'w+', encoding='utf-8') as f:
-    #     conll.write(f)
+    with open(conll_output, 'w+', encoding='utf-8') as f:
+        conll.write(f)
 
 
-def analyze_order(txt_input, seed):
+def analyze_order(language, language_short, dataset, seed=0):
+    txt_input = f"filled_conllu/{language}/{language_short}-ud-{dataset}_order_agnostic_{seed}.txt"
     with open(txt_input, "r", encoding='utf-8') as txt:
         lines = txt.readlines()
         # print(len(lines))
 
+    df_loaded = pd.read_csv("Russian-SynTagRus-dev-0.csv")
+    df_word_err = df_loaded[["word", "err"]]
+
     data = []
     categories = set()
-    for line in lines:
+    full_tags = set()
+    full_cats = set()
+    for index, line in enumerate(lines):
         features = {}
         word, grammemes = line.split(" - ")
+        assert word == df_word_err["word"].iloc[index], f'{index}, {word}, {df_word_err["word"].iloc[index]}'
         features["Form"] = word
-        for i, g in enumerate(grammemes.split()):
+        features["Error"] = df_word_err["err"].iloc[index]
+        features["Full_tag"] = grammemes[:-1]
+        g_split = grammemes.split()
+        c_split = [i.split('=')[0] for i in g_split]
+        features["Full_cat"] = ' '.join(c_split)
+        full_tags.add(frozenset(g_split))
+        full_cats.add(frozenset(c_split))
+        features["Set_g"] = frozenset(g_split)
+        features["Set_c"] = frozenset(c_split)
+        for i, g in enumerate(g_split):
             cat, val = g.split("=")
             features[cat + "_value"] = val
             features[cat + "_position"] = i
@@ -198,34 +217,63 @@ def analyze_order(txt_input, seed):
         data.append(features)
 
     categories = sorted(list(categories), key=len)
-    columns = ["Form"] + [cat + "_value" for cat in categories] + [cat + "_position" for cat in categories]
+    values = [cat + "_value" for cat in categories]
+    positions = [cat + "_position" for cat in categories]
+    columns = ["Form", "Error", "Full_tag", "Full_cat", "Set_g", "Set_c"] + values + positions
+    # columns = ["Form", "Full_tag", "Full_cat", "Set_g", "Set_c"] + values + positions
 
     df = pd.DataFrame(data=data, columns=columns)
     print(f"TOTAL WORDS: {len(df)}")
-    # df.to_excel(f"statistics_oa_{seed}.xlsx", na_rep="none")
+    print(f"TOTAL FULL TAGS: {len(full_tags)}")
+    print(f"TOTAL FULL CATS: {len(full_cats)}")
     # print(df[df['POS_value'].notnull()])
 
-    dataframes = [(df, "full")]
+    dfs_by_tags = {}
+    counter = 0
+    with open(f"filled_conllu/_analyze_order/unique_tags-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
+        for tag in full_tags:
+            dfs_by_tags[tag] = df[df["Set_g"] == tag]
+            txt.write(f"Current set: {' '.join(str(g) for g in tag)} ({len(dfs_by_tags[tag])})\n")
+            counter += len(dfs_by_tags[tag])
+            subgroup_sizes = dfs_by_tags[tag].groupby(["Full_tag", "Error"]).size()
+            group_sizes = dfs_by_tags[tag].groupby("Full_tag").size()
+            relative_sizes = subgroup_sizes / group_sizes
+            for v, c in group_sizes.items():
+                try:
+                    r = relative_sizes[(v, False)]
+                    txt.write(f"\t{v} ({c}, {r:.4})\n")
+                except KeyError:
+                    txt.write(f"\t{v} ({c}, {0.0})\n")
+    assert counter == len(df), f"{counter}, {len(df)}"
 
-    df_pos_case = df[df[['POS_value', 'Case_value']].notnull().all(1)]
-    dataframes.append((df_pos_case, "pos-case"))
-    # print(df_pos_case[['POS_value', 'Case_value', 'POS_position', 'Case_position']])
+    dfs_by_cats = {}
+    counter = 0
+    with open(f"filled_conllu/_analyze_order/unique_cats-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
+        for cat in full_cats:
+            dfs_by_cats[cat] = df[df["Set_c"] == cat]
+            txt.write(f"Current set: {' '.join(str(g) for g in cat)} ({len(dfs_by_cats[cat])})\n")
+            counter += len(dfs_by_cats[cat])
+            subgroup_sizes = dfs_by_cats[cat].groupby(["Full_cat", "Error"]).size()
+            group_sizes = dfs_by_cats[cat].groupby("Full_cat").size()
+            relative_sizes = subgroup_sizes / group_sizes
+            for v, c in group_sizes.items():
+                try:
+                    r = relative_sizes[(v, False)]
+                    txt.write(f"\t{v} ({c}, {r:.4})\n")
+                except KeyError:
+                    txt.write(f"\t{v} ({c}, {0.0})\n")
+    assert counter == len(df), f"{counter}, {len(df)}"
 
-    df_pos_animacy = df[df[['POS_value', 'Animacy_value']].notnull().all(1)]
-    dataframes.append((df_pos_animacy, "pos-animacy"))
-    # print(df_pos_animacy[['POS_value', 'Animacy_value', 'POS_position', 'Animacy_position']])
-
-    df_tense_animacy = df[df[['Tense_value', 'Animacy_value']].notnull().all(1)]
-    dataframes.append((df_tense_animacy, "tense-animacy"))
-    # print(df_tense_animacy[['Form', 'POS_value', 'Tense_value', 'Animacy_value']])
-
-    df_tense_case = df[df[['Tense_value', 'Case_value']].notnull().all(1)]
-    dataframes.append((df_tense_case, "tense-case"))
-    # print(df_tense_case[['Form', 'POS_value', 'Tense_value', 'Case_value']])
-
-    # for dataframe, name in dataframes:
-    #     for cat in categories:
-    #         print(f"{cat}_mean {name}: {dataframe[cat + '_position'].mean()}")
+    with open(f"filled_conllu/_analyze_order/positions-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
+        txt.write(f"Total words: {len(df)}\n\n")
+        txt.write("Category (avg position/occurences)\n")
+        txt.write("----------------------------------\n")
+        stats = []
+        for cat in categories:
+            stats.append([cat, (df[cat + '_position'].mean().round(5), df[cat + '_position'].count())])
+        stats.sort(key=lambda x: x[1][0])
+        for i, j in stats:
+            txt.write(f"{i} {j}\n")
 
 
 def get_uniq_words(conf, vocab, conll):
@@ -251,6 +299,7 @@ def construct_df(conll_true, conll_predicted, uniq_words):
         uniq_words (set): Set of oov words.
 
     """
+
     conll_true = pyconll.load_from_file(conll_true)
     conll_predicted = pyconll.load_from_file(conll_predicted)
     data = []
@@ -337,19 +386,18 @@ def calculate_accuracy_df(df):
     )
 
 
-def analyze_results():
+def calculate_mean_std(language_short="ru"):
     results_folder = "./filled_conllu"
     p = Path(results_folder)
 
-
-    params = ['-'.join(x.stem.split('-')[1:-1]) for x in p.glob("results-*-0*")]
+    params = ['-'.join(x.stem.split('-')[1:-1]) for x in p.glob(f"results-{language_short}-*-4*")]
     keys = []
     for param in params:
         results = []
         seeds = [str(x) for x in p.glob(f"results-{param}-*")]
         for seed in seeds:
-            with open(seed, "r") as s:
-                lines = s.readlines()[1:]
+            with open(seed, "r") as f:
+                lines = f.readlines()[1:]
                 results.append([float(v.split(': ')[1]) for v in lines])
                 if len(keys) == 0:
                     keys = [k.split(': ')[0] for k in lines]
@@ -363,7 +411,7 @@ def analyze_results():
                 file.write(f"{key}: {m_:.5} ± {s_:.5}\n")
 
 
-def evaluate_models(language="Russian", language_short="ru", dataset="train"):
+def evaluate_models(language="Russian", language_short="ru", dataset="train", save_df=True):
     """Uses trained models to fill conllu files, then evaluates metrics and writes results to .txt files.
 
     Args:
@@ -371,43 +419,51 @@ def evaluate_models(language="Russian", language_short="ru", dataset="train"):
             e.g. 'Russian', 'Russian-SynTagRus'.
         language_short (str, default 'ru'): short language name as in conllu files, e.g. 'ru', 'ru_syntagrus'.
         dataset (str, default 'dev'): 'dev' or 'test'.
+        save_df (bool, default True): determines whether to save DataFrame of all words to csv.
     """
+
     trained_models_folder = "./trained_models"
 
     p = Path(trained_models_folder)
 
     # temp = pathlib.PosixPath
     # pathlib.PosixPath = pathlib.WindowsPath
-    for seed_number in range(5):
+    for seed_number in range(1):
         model_paths = [str(x) for x in p.glob(f"*order_agnostic/{language}/seed_{seed_number}/model.pt")]
         vocab_paths = [str(x) for x in p.glob(f"*/{language}/vocab.pickle")]
 
         for model_path, vocab_path in zip(model_paths, vocab_paths):
             model_name = model_path.split('\\')[1]
-            print(f"{model_name} run {seed_number}")
+            print(f"{language}, {dataset}, {model_name}, run {seed_number}")
             conf, vocab, model = load_model_vocab(model_path, vocab_path)
             # pathlib.PosixPath = temp
 
             conll_input = f"./filled_conllu/{language}/{language_short}-ud-{dataset}.conllu"
-            conll_output = f"./filled_conllu/{language}/{language_short}-ud-{dataset}_{model_name}_{seed_number}.conllu"
+            conll_output = f"./filled_conllu/{language}/{language_short}-ud-{dataset}-{model_name}-{seed_number}.conllu"
 
             uniq_words = get_uniq_words(conf, vocab, pyconll.load_from_file(conll_input))
+            print("Filling files...")
             fill_conllu(conf, vocab, model, uniq_words, conll_input, conll_output)
-            df = construct_df(conll_input, conll_output, uniq_words)
+            print("Files filled")
 
+            print("Constructing DataFrame...")
+            df = construct_df(conll_input, conll_output, uniq_words)
+            if save_df:
+                df.to_csv(f"{language}-{dataset}-{seed_number}.csv", na_rep="NULL", encoding="utf-8")
+            print("DataFrame done")
             # analyze_df(df)
 
-            # with open(f"./filled_conllu/results-{language_short}-{dataset}-{model_name}-{seed_number}.txt", "w+") as file:
-            #     file.write(f"{language}, {dataset}, {model_name}\n")
-            #     results = calculate_accuracy_df(df)
-            #     for key in results:
-            #         file.write(f"{key}: {results[key]:.5}\n")
+            with open(f"./filled_conllu/results-{language_short}-{dataset}-{model_name}-{seed_number}.txt", "w+") as file:
+                file.write(f"{language}, {dataset}, {model_name}\n")
+                results = calculate_accuracy_df(df)
+                for key in results:
+                    file.write(f"{key}: {results[key]:.5}\n")
 
 
 if __name__ == "__main__":
-    # evaluate_models(dataset="dev")
-    # analyze_results()
-    # predict_sentence("Каждый охотник желает знать, где сидит фазан.", "prediction.txt")
-    for seed in range(1):
-        print(f"====================\norder_agnostic run {seed}")
-        analyze_order(f"filled_conllu/Russian/ru-ud-train_order_agnostic_{seed}.txt", seed=seed)
+    # evaluate_models(language="Russian-SynTagRus", language_short="ru_syntagrus", dataset="dev", save_df=True)
+    # calculate_mean_std(language_short="ru_syntagrus")
+    # predict_sentence('Каждый охотник желает знать, где сидит фазан.', "prediction.txt")
+    for s in range(1):
+        print(f"Analyze order: run {s}")
+        analyze_order(language="Russian-SynTagRus", language_short="ru_syntagrus", dataset="dev", seed=s)
