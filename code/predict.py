@@ -188,7 +188,7 @@ def analyze_order(language, language_short, dataset, seed=0):
         lines = txt.readlines()
         # print(len(lines))
 
-    df_loaded = pd.read_csv("Russian-SynTagRus-dev-0.csv")
+    df_loaded = pd.read_csv(f"{language}-{dataset}-{seed}.csv")
     df_word_err = df_loaded[["word", "err"]]
 
     data = []
@@ -233,7 +233,8 @@ def analyze_order(language, language_short, dataset, seed=0):
     with open(f"filled_conllu/_analyze_order/unique_tags-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
         for tag in full_tags:
             dfs_by_tags[tag] = df[df["Set_g"] == tag]
-            txt.write(f"Current set: {' '.join(str(g) for g in tag)} ({len(dfs_by_tags[tag])})\n")
+            current_set = ' '.join(str(g) for g in sorted(tag, key=len))
+            txt.write(f"Current set: {current_set} ({len(dfs_by_tags[tag])})\n")
             counter += len(dfs_by_tags[tag])
             subgroup_sizes = dfs_by_tags[tag].groupby(["Full_tag", "Error"]).size()
             group_sizes = dfs_by_tags[tag].groupby("Full_tag").size()
@@ -246,12 +247,14 @@ def analyze_order(language, language_short, dataset, seed=0):
                     txt.write(f"\t{v} ({c}, {0.0})\n")
     assert counter == len(df), f"{counter}, {len(df)}"
 
+    data = []
     dfs_by_cats = {}
     counter = 0
     with open(f"filled_conllu/_analyze_order/unique_cats-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
         for cat in full_cats:
             dfs_by_cats[cat] = df[df["Set_c"] == cat]
-            txt.write(f"Current set: {' '.join(str(g) for g in cat)} ({len(dfs_by_cats[cat])})\n")
+            current_set = ' '.join(str(g) for g in sorted(cat, key=len))
+            txt.write(f"Current set: {current_set} ({len(dfs_by_cats[cat])})\n")
             counter += len(dfs_by_cats[cat])
             subgroup_sizes = dfs_by_cats[cat].groupby(["Full_cat", "Error"]).size()
             group_sizes = dfs_by_cats[cat].groupby("Full_cat").size()
@@ -260,20 +263,42 @@ def analyze_order(language, language_short, dataset, seed=0):
                 try:
                     r = relative_sizes[(v, False)]
                     txt.write(f"\t{v} ({c}, {r:.4})\n")
+                    data += [(current_set, v, c, r)]
                 except KeyError:
                     txt.write(f"\t{v} ({c}, {0.0})\n")
+                    data += [(current_set, v, c, 0.0)]
     assert counter == len(df), f"{counter}, {len(df)}"
+    df_order = pd.DataFrame(data=data, columns=["Set", "Order", "Count", "Accuracy"])
+    df_order.to_csv(f"filled_conllu/_analyze_order/unique_cats-{language_short}-{dataset}-{seed}.csv", encoding="utf-8")
 
-    with open(f"filled_conllu/_analyze_order/positions-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
-        txt.write(f"Total words: {len(df)}\n\n")
-        txt.write("Category (avg position/occurences)\n")
-        txt.write("----------------------------------\n")
-        stats = []
-        for cat in categories:
-            stats.append([cat, (df[cat + '_position'].mean().round(5), df[cat + '_position'].count())])
-        stats.sort(key=lambda x: x[1][0])
-        for i, j in stats:
-            txt.write(f"{i} {j}\n")
+    # with open(f"filled_conllu/_analyze_order/positions-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
+    #     txt.write(f"Total words: {len(df)}\n\n")
+    #     txt.write("Category (avg position/occurences)\n")
+    #     txt.write("----------------------------------\n")
+    #     stats = []
+    #     for cat in categories:
+    #         stats.append([cat, (df[cat + '_position'].mean().round(5), df[cat + '_position'].count())])
+    #     stats.sort(key=lambda x: x[1][0])
+    #     for i, j in stats:
+    #         txt.write(f"{i} {j}\n")
+
+
+def visualize_order(language, language_short, dataset, seed=0):
+    import plotly.express as px
+    csv_input = f"filled_conllu/_analyze_order/unique_cats-{language_short}-{dataset}-{seed}.csv"
+    df = pd.read_csv(csv_input)
+    # print(df["Set"].nunique())
+    # print(df["Count"].sum())
+    # print(f'{((df["Count"] * df["Accuracy"]).sum() / df["Count"].sum()):.5}')
+
+    counter = 0
+    for set_name, df_set in df.groupby("Set"):
+        if len(df_set) > 1:
+            if df_set["Count"].sum() >= 1000 or (df_set["Accuracy"] * df_set["Count"]).sum() / df_set["Count"].sum() > 0.95:
+                print(set_name)
+                print(df_set[["Order", "Count", "Accuracy"]].to_string(index=False))
+                print()
+    # px.histogram()
 
 
 def get_uniq_words(conf, vocab, conll):
@@ -464,6 +489,7 @@ if __name__ == "__main__":
     # evaluate_models(language="Russian-SynTagRus", language_short="ru_syntagrus", dataset="dev", save_df=True)
     # calculate_mean_std(language_short="ru_syntagrus")
     # predict_sentence('Каждый охотник желает знать, где сидит фазан.', "prediction.txt")
-    for s in range(1):
-        print(f"Analyze order: run {s}")
-        analyze_order(language="Russian-SynTagRus", language_short="ru_syntagrus", dataset="dev", seed=s)
+    # for s in range(1):
+    #     print(f"Analyze order: run {s}")
+    #     analyze_order(language="Russian-SynTagRus", language_short="ru_syntagrus", dataset="dev", seed=s)
+    visualize_order(language="Russian-SynTagRus", language_short="ru_syntagrus", dataset="dev", seed=0)
