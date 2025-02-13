@@ -56,6 +56,9 @@ def predictions_to_grammemes(vocabulary, predictions):
 
 
 def predict_sentence(sentence, output):
+    """Predicts morphological categories for sentence and outputs to txt file"""
+
+    # add arguments for model
     conf, vocab, model = load_model_vocab("./trained_models/order_agnostic/Russian-SynTagRus/seed_0/model.pt",
                                           "./trained_models/order_agnostic/Russian-SynTagRus/vocab.pickle")
     word_list = re.findall(r"\b\w+(?:-\w+)*\b|[^\w\s]", sentence)
@@ -103,15 +106,21 @@ def predict_sentence(sentence, output):
 
     with open(output, "w+", encoding='utf-8') as txt:
         for label, word in zip(grammemes, word_list):
-            s = []
+            tag = []
             for g in label:
                 if g == "$EOS$":
                     break
-                s.append(g)
-            txt.write(f"{word} - {s}\n")
+                tag.append(g)
+            txt.write(f"{word} - {tag}\n")
 
 
-def fill_conllu(conf, vocab, model, uniq_words, conll_input, conll_output):
+def fill(conf, vocab, model, uniq_words, conll_input, conll_output):
+    """Given file in conllu format, creates another with morphological categories filled.
+
+    Also, creates txt file with the same name where words and their tags are written line by line.
+    It is then used to retrieve positions of predicted grammemes.
+    """
+
     conll = pyconll.load_from_file(conll_input)
     txt_output = conll_output[:-6] + "txt"
 
@@ -183,61 +192,69 @@ def fill_conllu(conf, vocab, model, uniq_words, conll_input, conll_output):
 
 
 def analyze_order(language, language_short, dataset, seed=0):
-    txt_input = f"filled_conllu/{language}/{language_short}-ud-{dataset}_order_agnostic_{seed}.txt"
+    """
+    Method creates files and DataFrames that contain information about order of predictions.
+    See inline comments for details.
+    For arguments meanings, see evaluate_models().
+    """
+
+    # 1. load txt file created in fill_conllu()
+    txt_input = f"filled_conllu/{language}/{language_short}-ud-{dataset}-order_agnostic-{seed}.txt"
     with open(txt_input, "r", encoding='utf-8') as txt:
         lines = txt.readlines()
         # print(len(lines))
 
+    # 2. load DataFrame created in evaluate_models() to include accuracy for orders
     df_loaded = pd.read_csv(f"{language}-{dataset}-{seed}.csv")
     df_word_err = df_loaded[["word", "err"]]
 
-    data = []
+    # 3. create DataFrame where each row corresponds to one token and specifies info about grammemes and their positions
+    # columns "Full_tag", "Full_cat", "Set_g" and "Set_c" contain info that can be retrieved from other columns,
+    # and are needed to avoid repetitive computations
+    data_cats = []
     categories = set()
-    full_tags = set()
-    full_cats = set()
     for index, line in enumerate(lines):
         features = {}
         word, grammemes = line.split(" - ")
         assert word == df_word_err["word"].iloc[index], f'{index}, {word}, {df_word_err["word"].iloc[index]}'
         features["Form"] = word
         features["Error"] = df_word_err["err"].iloc[index]
-        features["Full_tag"] = grammemes[:-1]
+        features["Full_tag"] = grammemes[:-1] # grammemes in order of predictions
         g_split = grammemes.split()
         c_split = [i.split('=')[0] for i in g_split]
-        features["Full_cat"] = ' '.join(c_split)
-        full_tags.add(frozenset(g_split))
-        full_cats.add(frozenset(c_split))
-        features["Set_g"] = frozenset(g_split)
-        features["Set_c"] = frozenset(c_split)
+        features["Full_cat"] = ' '.join(c_split) # morphological categories in order of prediction
+        features["Set_g"] = frozenset(g_split) # set of grammemes
+        features["Set_c"] = frozenset(c_split) # set of morphological categories
         for i, g in enumerate(g_split):
             cat, val = g.split("=")
-            features[cat + "_value"] = val
-            features[cat + "_position"] = i
+            # other columns can be reconstructed from following:
+            features[cat + "_value"] = val # columns for categories values
+            features[cat + "_position"] = i # columns for categories positions
             categories.add(cat)
-        data.append(features)
+        data_cats.append(features)
 
     categories = sorted(list(categories), key=len)
     values = [cat + "_value" for cat in categories]
     positions = [cat + "_position" for cat in categories]
     columns = ["Form", "Error", "Full_tag", "Full_cat", "Set_g", "Set_c"] + values + positions
-    # columns = ["Form", "Full_tag", "Full_cat", "Set_g", "Set_c"] + values + positions
 
-    df = pd.DataFrame(data=data, columns=columns)
+    df = pd.DataFrame(data=data_cats, columns=columns)
     print(f"TOTAL WORDS: {len(df)}")
-    print(f"TOTAL FULL TAGS: {len(full_tags)}")
-    print(f"TOTAL FULL CATS: {len(full_cats)}")
-    # print(df[df['POS_value'].notnull()])
 
-    dfs_by_tags = {}
+    # the loops below contain repetitive code, consider refactoring to a separate method with arguments
+
+    # 4.1 write to file possible orders for sets of grammemes, i.e. categories AND values
     counter = 0
     with open(f"filled_conllu/_analyze_order/unique_tags-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
-        for tag in full_tags:
-            dfs_by_tags[tag] = df[df["Set_g"] == tag]
+        dfs_by_tags = df.groupby("Set_g", dropna=False)
+        print(f"TOTAL TAG GROUPS: {dfs_by_tags.ngroups}")
+        txt.write(f"TOTAL TAG GROUPS: {dfs_by_tags.ngroups}\n\n")
+        for tag, dataframe in dfs_by_tags:
             current_set = ' '.join(str(g) for g in sorted(tag, key=len))
-            txt.write(f"Current set: {current_set} ({len(dfs_by_tags[tag])})\n")
-            counter += len(dfs_by_tags[tag])
-            subgroup_sizes = dfs_by_tags[tag].groupby(["Full_tag", "Error"]).size()
-            group_sizes = dfs_by_tags[tag].groupby("Full_tag").size()
+            txt.write(f"Current set: {current_set} ({len(dataframe)})\n")
+            counter += len(dataframe)
+            subgroup_sizes = dataframe.groupby(["Full_tag", "Error"]).size()
+            group_sizes = dataframe.groupby("Full_tag").size()
             relative_sizes = subgroup_sizes / group_sizes
             for v, c in group_sizes.items():
                 try:
@@ -247,58 +264,84 @@ def analyze_order(language, language_short, dataset, seed=0):
                     txt.write(f"\t{v} ({c}, {0.0})\n")
     assert counter == len(df), f"{counter}, {len(df)}"
 
-    data = []
-    dfs_by_cats = {}
+    # 4.2 write to file possible orders for sets of categories, i.e. only categories
+    data_cats = []
     counter = 0
     with open(f"filled_conllu/_analyze_order/unique_cats-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
-        for cat in full_cats:
-            dfs_by_cats[cat] = df[df["Set_c"] == cat]
+        dfs_by_cats = df.groupby("Set_c", dropna=False)
+        print(f"TOTAL CAT GROUPS: {dfs_by_cats.ngroups}")
+        txt.write(f"TOTAL CAT GROUPS: {dfs_by_cats.ngroups}\n\n")
+        for cat, dataframe in dfs_by_cats:
             current_set = ' '.join(str(g) for g in sorted(cat, key=len))
-            txt.write(f"Current set: {current_set} ({len(dfs_by_cats[cat])})\n")
-            counter += len(dfs_by_cats[cat])
-            subgroup_sizes = dfs_by_cats[cat].groupby(["Full_cat", "Error"]).size()
-            group_sizes = dfs_by_cats[cat].groupby("Full_cat").size()
+            txt.write(f"Current set: {current_set} ({len(dataframe)})\n")
+            counter += len(dataframe)
+            subgroup_sizes = dataframe.groupby(["Full_cat", "Error"]).size()
+            group_sizes = dataframe.groupby("Full_cat").size()
             relative_sizes = subgroup_sizes / group_sizes
             for v, c in group_sizes.items():
                 try:
                     r = relative_sizes[(v, False)]
                     txt.write(f"\t{v} ({c}, {r:.4})\n")
-                    data += [(current_set, v, c, r)]
+                    data_cats += [(current_set, v, c, r)]
                 except KeyError:
                     txt.write(f"\t{v} ({c}, {0.0})\n")
-                    data += [(current_set, v, c, 0.0)]
+                    data_cats += [(current_set, v, c, 0.0)]
     assert counter == len(df), f"{counter}, {len(df)}"
-    df_order = pd.DataFrame(data=data, columns=["Set", "Order", "Count", "Accuracy"])
+    df_order = pd.DataFrame(data=data_cats, columns=["Set", "Order", "Count", "Accuracy"])
     df_order.to_csv(f"filled_conllu/_analyze_order/unique_cats-{language_short}-{dataset}-{seed}.csv", encoding="utf-8")
 
-    # with open(f"filled_conllu/_analyze_order/positions-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
-    #     txt.write(f"Total words: {len(df)}\n\n")
-    #     txt.write("Category (avg position/occurences)\n")
-    #     txt.write("----------------------------------\n")
-    #     stats = []
-    #     for cat in categories:
-    #         stats.append([cat, (df[cat + '_position'].mean().round(5), df[cat + '_position'].count())])
-    #     stats.sort(key=lambda x: x[1][0])
-    #     for i, j in stats:
-    #         txt.write(f"{i} {j}\n")
+    # 4.3 for every POS value, write to file orders for sets that contain that POS
+    data_pos = []
+    counter = 0
+    with open(f"filled_conllu/_analyze_order/unique_pos-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
+        dfs_by_pos = df.groupby("POS_value", dropna=False)
+        print(f"TOTAL POS VALUES: {dfs_by_pos.ngroups}")
+        txt.write(f"TOTAL POS VALUES: {dfs_by_pos.ngroups}\n\n")
+        for pos_value, dataframe in dfs_by_pos:
+            txt.write(f"POS: {pos_value} ({len(dataframe)})\n")
+            counter += len(dataframe)
+            subgroup_sizes = dataframe.groupby(["Full_cat", "Error"]).size()
+            group_sizes = dataframe.groupby("Full_cat").size().sort_values(ascending=False)
+            relative_sizes = subgroup_sizes / group_sizes
+            for v, c in group_sizes.items():
+                try:
+                    r = relative_sizes[(v, False)]
+                    txt.write(f"\t{v} ({c}, {r:.4})\n")
+                    data_pos += [(pos_value, v, c, r)]
+                except KeyError:
+                    txt.write(f"\t{v} ({c}, {0.0})\n")
+                    data_pos += [(pos_value, v, c, 0.0)]
+    assert counter == len(df), f"{counter}, {len(df)}"
+    df_pos = pd.DataFrame(data=data_pos, columns=["POS", "Order", "Count", "Accuracy"])
+    df_pos.to_csv(f"filled_conllu/_analyze_order/unique_pos-{language_short}-{dataset}-{seed}.csv",
+                  encoding="utf-8", na_rep="nan")
+
+    # 5. write to file average positions of categories
+    with open(f"filled_conllu/_analyze_order/positions-{language_short}-{dataset}-{seed}.txt", "w+", encoding='utf-8') as txt:
+        txt.write(f"Total words: {len(df)}\n\n")
+        txt.write("Category (avg position/occurences)\n")
+        txt.write("----------------------------------\n")
+        stats = []
+        for cat in categories:
+            stats.append([cat, (df[cat + '_position'].mean().round(5), df[cat + '_position'].count())])
+        stats.sort(key=lambda x: x[1][0])
+        for i, j in stats:
+            txt.write(f"{i} {j}\n")
 
 
 def visualize_order(language, language_short, dataset, seed=0):
-    import plotly.express as px
-    csv_input = f"filled_conllu/_analyze_order/unique_cats-{language_short}-{dataset}-{seed}.csv"
-    df = pd.read_csv(csv_input)
-    # print(df["Set"].nunique())
-    # print(df["Count"].sum())
-    # print(f'{((df["Count"] * df["Accuracy"]).sum() / df["Count"].sum()):.5}')
+    """Method uses Plotly to visualize orders of predictions."""
 
-    counter = 0
-    for set_name, df_set in df.groupby("Set"):
-        if len(df_set) > 1:
-            if df_set["Count"].sum() >= 1000 or (df_set["Accuracy"] * df_set["Count"]).sum() / df_set["Count"].sum() > 0.95:
-                print(set_name)
-                print(df_set[["Order", "Count", "Accuracy"]].to_string(index=False))
-                print()
-    # px.histogram()
+    import plotly.express as px
+    csv_input = f"filled_conllu/_analyze_order/unique_pos-{language_short}-{dataset}-{seed}.csv"
+    df = pd.read_csv(csv_input, na_values="nan")
+    # just to make sure that DataFrame was saved and loaded correctly (compare to printouts from analyze_order())
+    print(f'Assert {df["POS"].nunique(dropna=False)} unique groups')
+    print(f'Assert {df["Count"].sum()} total words')
+    print(f'Assert {((df["Count"] * df["Accuracy"]).sum() / df["Count"].sum()):.5} accuracy') # refer to txt files
+
+    fig = px.scatter(df, x="Count", y="Accuracy", color="POS", hover_data="Order", log_x=True, log_y=True)
+    fig.show()
 
 
 def get_uniq_words(conf, vocab, conll):
@@ -364,33 +407,6 @@ def construct_df(conll_true, conll_predicted, uniq_words):
     return df
 
 
-def analyze_df(df):
-    correct_df = df[df.err == False]
-    error_df = df[df.err == True]
-    print(f"errors: {len(error_df)}")
-    uniq_df = df[df.uniq == True]
-    vocab_df = df[df.uniq == False]
-    neighbors_uniq_df = df[df.neighbors_uniq == True]
-    neighbors_vocab_df = df[df.neighbors_uniq == False]
-
-    error_uniq_df = error_df[error_df.uniq == True]
-    error_vocab_df = error_df[error_df.uniq == False]
-    error_neighbors_uniq_df = error_df[error_df.neighbors_uniq == True]
-    error_neighbors_vocab_df = error_df[error_df.neighbors_uniq == False]
-    print(f"erroneous words that neighbor uniq: {len(error_neighbors_uniq_df)}, {len(error_neighbors_uniq_df) / len(neighbors_uniq_df)}")
-    print(f"erroneous words that neighbor vocab: {len(error_neighbors_vocab_df)}, {len(error_neighbors_vocab_df) / len(neighbors_vocab_df)}")
-    print(f"erroneous words that are uniq: {len(error_uniq_df)}, {len(error_uniq_df) / len(uniq_df)}")
-    print(f"erroneous words that are vocab: {len(error_vocab_df)}, {len(error_vocab_df) / len(vocab_df)}")
-    # category_df = {}
-    # print(len(df))
-    # for cat in ['Case', 'Gender', 'Number', 'VerbForm', 'Tense', 'Person', 'Degree', 'Aspect', 'Voice', 'Mood']:
-    #     category_df[cat] = df.loc[df['tt_morph'].str.contains(cat)]
-    #     category_df['error_' + cat] = category_df[cat][category_df[cat].err == True]
-    #     print(f"errors for {cat} - {len(category_df['error_' + cat])}, "
-    #           f"{len(category_df['error_' + cat]) / len(category_df[cat]):.3f}")
-    # print(error_vocab_df)
-
-
 def calculate_accuracy_df(df):
     from sklearn.metrics import accuracy_score
     return OrderedDict(
@@ -436,7 +452,7 @@ def calculate_mean_std(language_short="ru"):
                 file.write(f"{key}: {m_:.5} ± {s_:.5}\n")
 
 
-def evaluate_models(language="Russian", language_short="ru", dataset="train", save_df=True):
+def evaluate_models(language="Russian", language_short="ru", dataset="dev", save_df=True):
     """Uses trained models to fill conllu files, then evaluates metrics and writes results to .txt files.
 
     Args:
@@ -453,7 +469,7 @@ def evaluate_models(language="Russian", language_short="ru", dataset="train", sa
 
     # temp = pathlib.PosixPath
     # pathlib.PosixPath = pathlib.WindowsPath
-    for seed_number in range(1):
+    for seed_number in range(5):
         model_paths = [str(x) for x in p.glob(f"*order_agnostic/{language}/seed_{seed_number}/model.pt")]
         vocab_paths = [str(x) for x in p.glob(f"*/{language}/vocab.pickle")]
 
@@ -468,7 +484,7 @@ def evaluate_models(language="Russian", language_short="ru", dataset="train", sa
 
             uniq_words = get_uniq_words(conf, vocab, pyconll.load_from_file(conll_input))
             print("Filling files...")
-            fill_conllu(conf, vocab, model, uniq_words, conll_input, conll_output)
+            fill(conf, vocab, model, uniq_words, conll_input, conll_output)
             print("Files filled")
 
             print("Constructing DataFrame...")
@@ -476,7 +492,6 @@ def evaluate_models(language="Russian", language_short="ru", dataset="train", sa
             if save_df:
                 df.to_csv(f"{language}-{dataset}-{seed_number}.csv", na_rep="NULL", encoding="utf-8")
             print("DataFrame done")
-            # analyze_df(df)
 
             with open(f"./filled_conllu/results-{language_short}-{dataset}-{model_name}-{seed_number}.txt", "w+") as file:
                 file.write(f"{language}, {dataset}, {model_name}\n")
@@ -486,10 +501,21 @@ def evaluate_models(language="Russian", language_short="ru", dataset="train", sa
 
 
 if __name__ == "__main__":
-    # evaluate_models(language="Russian-SynTagRus", language_short="ru_syntagrus", dataset="dev", save_df=True)
-    # calculate_mean_std(language_short="ru_syntagrus")
+    lang, lang_short, dset = ("Russian", "ru", "dev")
+    # lang, lang_short, dset = ("Russian-SynTagRus", "ru_syntagrus", "dev")
+
+    # evaluate_models(language=lang, language_short=lang_short, dataset=dset, save_df=True)
+    # calculate_mean_std(language_short=lang_short)
     # predict_sentence('Каждый охотник желает знать, где сидит фазан.', "prediction.txt")
-    # for s in range(1):
-    #     print(f"Analyze order: run {s}")
-    #     analyze_order(language="Russian-SynTagRus", language_short="ru_syntagrus", dataset="dev", seed=s)
-    visualize_order(language="Russian-SynTagRus", language_short="ru_syntagrus", dataset="dev", seed=0)
+    for s in range(5):
+        print(f"====================\n"
+              f"Analyze order: run {s}")
+        analyze_order(language=lang, language_short=lang_short, dataset=dset, seed=s)
+    for s in range(5):
+        print(f"======================\n"
+              f"Visualize order: run {s}")
+        visualize_order(language=lang, language_short=lang_short, dataset=dset, seed=s)
+
+    # TODO: calculate number of orders (average among all sets)
+    # split groups further: by gender, animacy or other
+    # add train set and look only at correct predictions
