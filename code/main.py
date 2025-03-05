@@ -15,15 +15,44 @@ import numpy as np
 import random
 
 
+def different_orders():
+    # method is used for checking that orders are loaded as expected
+    conf = parse_arguments()
+
+    pos_first = [False, True]
+    orders = ["direct", "reverse", "frequency", "reverse_frequency"]
+
+    results = []
+    for o in orders:
+        for p in pos_first:
+            conf['order'] = o
+            conf['pos_first'] = p
+            conf['vocab_file'] = f"{conf['model']}/order_test_vocab_{o}_{p}.pickle"
+
+            vocab = get_vocab(conf, rewrite=True)
+            data = CustomDataset(conf, vocab, ["./data/order_test.conllu"])
+
+            (_, labels), sentence = data[0]
+            tag_ids = labels[2]
+            tag = [vocab.vocab["index-grammeme"][g] for g in tag_ids]
+            results += [(tag, o, p)]
+
+    for r in results:
+        print(*r)
+
+
 def parse_arguments():
     """Loads config from json file and adds command line arguments to it."""
 
     argp = argparse.ArgumentParser()
     argp.add_argument('config', help='json file containing configurations parameters')
     argp.add_argument('language', help='Directory with all files used for training. Must contain train conllu files')
-    argp.add_argument('model', help='Directory with model and runs')
+    argp.add_argument('model', help='Directory with model and vocab files')
+    argp.add_argument('--seed', help='Random seed. If specified, model will be run only once')
     argp.add_argument('--pretrained_embeddings',
                       help='file with word embeddings (fastText), .bin extension')
+    # it is an optional argument even though program will crash if it is not specified
+    # in the future, it should randomly initialize all embeddings if pretrained are not provided
 
     args = argp.parse_args()
 
@@ -40,6 +69,7 @@ def parse_arguments():
 
     config['language'] = args.language
     config['model'] = args.model
+    config['seed'] = int(args.seed) if args.seed is not None else None
     config['pretrained_embeddings'] = args.pretrained_embeddings
 
     config['device'] = 'cuda' if cuda.is_available() else 'cpu'
@@ -92,22 +122,30 @@ def main():
         ft = None
         oov_pretrained_vocab = None
 
-    print(f"Training model {conf['number_of_runs']} time(s)")
-    for run_number in range(conf['number_of_runs']):
+    def run(seed):
         torch.backends.cudnn.deterministic = True
-        torch.random.manual_seed(run_number)
-        cuda.manual_seed(run_number)
-        np.random.seed(run_number)
-        random.seed(run_number)
+        torch.random.manual_seed(seed)
+        cuda.manual_seed(seed)
+        np.random.seed(seed)
+        random.seed(seed)
 
         vocab.create_embeddings(ft=ft, dimension=conf['word_embeddings_dimension'])
         model = Model(conf, vocab).to(conf['device'])
         trainer = Trainer(conf, model, train_data, valid_data, test_data,
-                          run_number=run_number, subset_size=0).to(conf['device'])
+                          run_number=seed, subset_size=0).to(conf['device'])
         trainer.epoch_loops(oov_pretrained_vocab=oov_pretrained_vocab)
 
         print("Training complete")
 
+    if conf['seed'] is None:
+        print(f"Training model {conf['number_of_runs']} time(s)")
+        for run_number in range(conf['number_of_runs']):
+            run(run_number)
+    else:
+        print(f"Training model 1 time with seed {conf['seed']}")
+        run(conf['seed'])
+
 
 if __name__ == "__main__":
     main()
+    # different_orders()

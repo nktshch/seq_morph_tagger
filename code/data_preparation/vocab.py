@@ -243,13 +243,13 @@ class Vocab:
                     grammeme_ids = []
                     if self.conf['order'] == 'direct':
                         if word.upos is not None:
-                            grammeme_ids = [self.vocab["grammeme-index"].get("POS=" + word.upos, unk_grammeme_id)]
+                            grammeme_ids += [self.vocab["grammeme-index"].get("POS=" + word.upos, unk_grammeme_id)]
                         grammeme_ids += [
                             self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id)
                             for key in list(word.feats) for feat in list(word.feats[key])]
                         labels += [grammeme_ids]
 
-                    elif self.conf['order'] == 'reverse':
+                    elif self.conf['order'] == 'reverse' and self.conf['pos_first'] is False:
                         grammeme_ids += [
                             self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id)
                             for key in reversed(list(word.feats)) for feat in reversed(list(word.feats[key]))]
@@ -257,24 +257,52 @@ class Vocab:
                             grammeme_ids += [self.vocab["grammeme-index"].get("POS=" + word.upos, unk_grammeme_id)]
                         labels += [grammeme_ids]
 
-                    elif self.conf['order'] == 'frequency':
+                    elif self.conf['order'] == 'reverse' and self.conf['pos_first'] is True:
+                        if word.upos is not None:
+                            grammeme_ids += [self.vocab["grammeme-index"].get("POS=" + word.upos, unk_grammeme_id)]
+                        grammeme_ids += [
+                            self.vocab["grammeme-index"].get(key + "=" + feat, unk_grammeme_id)
+                            for key in reversed(list(word.feats)) for feat in reversed(list(word.feats[key]))]
+                        labels += [grammeme_ids]
+
+                    elif self.conf['order'] == 'frequency' and self.conf['pos_first'] is False:
                         grammeme_strings = []
                         if word.upos is not None:
                             grammeme_strings = ["POS=" + word.upos]
                         grammeme_strings += [key + "=" + feat for key in word.feats for feat in word.feats[key]]
                         grammeme_strings = sorted(grammeme_strings,
                                                   key=lambda item: self.grammemes_by_freq_indices[item])
-                        grammeme_ids = [self.vocab["grammeme-index"][g] for g in grammeme_strings]
+                        grammeme_ids = [self.vocab["grammeme-index"].get(g, unk_grammeme_id) for g in grammeme_strings]
                         labels += [grammeme_ids]
 
-                    elif self.conf['order'] == 'reverse_frequency':
+                    elif self.conf['order'] == 'frequency' and self.conf['pos_first'] is True:
+                        grammeme_strings = []
+                        if word.upos is not None:
+                            grammeme_ids += [self.vocab["grammeme-index"].get("POS=" + word.upos, unk_grammeme_id)]
+                        grammeme_strings += [key + "=" + feat for key in word.feats for feat in word.feats[key]]
+                        grammeme_strings = sorted(grammeme_strings,
+                                                  key=lambda item: self.grammemes_by_freq_indices[item])
+                        grammeme_ids += [self.vocab["grammeme-index"].get(g, unk_grammeme_id) for g in grammeme_strings]
+                        labels += [grammeme_ids]
+
+                    elif self.conf['order'] == 'reverse_frequency' and self.conf['pos_first'] is False:
                         grammeme_strings = []
                         if word.upos is not None:
                             grammeme_strings = ["POS=" + word.upos]
                         grammeme_strings += [key + "=" + feat for key in word.feats for feat in word.feats[key]]
                         grammeme_strings = sorted(grammeme_strings, reverse=True,
                                                   key=lambda item: self.grammemes_by_freq_indices[item])
-                        grammeme_ids = [self.vocab["grammeme-index"][g] for g in grammeme_strings]
+                        grammeme_ids = [self.vocab["grammeme-index"].get(g, unk_grammeme_id) for g in grammeme_strings]
+                        labels += [grammeme_ids]
+
+                    elif self.conf['order'] == 'reverse_frequency' and self.conf['pos_first'] is True:
+                        grammeme_strings = []
+                        if word.upos is not None:
+                            grammeme_ids += [self.vocab["grammeme-index"].get("POS=" + word.upos, unk_grammeme_id)]
+                        grammeme_strings += [key + "=" + feat for key in word.feats for feat in word.feats[key]]
+                        grammeme_strings = sorted(grammeme_strings, reverse=True,
+                                                  key=lambda item: self.grammemes_by_freq_indices[item])
+                        grammeme_ids += [self.vocab["grammeme-index"].get(g, unk_grammeme_id) for g in grammeme_strings]
                         labels += [grammeme_ids]
 
                     else:
