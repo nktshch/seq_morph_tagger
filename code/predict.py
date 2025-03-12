@@ -178,6 +178,7 @@ def fill(conf, vocab, model, uniq_words, conll_input, conll_output):
                     txt.write("\n")
                     other_grammemes = [g for g in label if "POS" not in g]
                     pos_grammeme = next(iter([g for g in label if "POS" in g]), "POS=Did_not_predict")
+                    # if there are multiple POS predicted, first is taken
                     token.upos = pos_grammeme[4:]
                     feats = defaultdict(list)
                     for grammeme in other_grammemes:
@@ -198,7 +199,7 @@ def analyze_order(language, language_short, dataset, seed=0):
     For arguments meanings, see evaluate_models().
     """
 
-    # 1. load txt file created in fill_conllu()
+    # 1. load txt file created in fill()
     txt_input = f"filled_conllu/{language}/{language_short}-ud-{dataset}-order_agnostic-{seed}.txt"
     with open(txt_input, "r", encoding='utf-8') as txt:
         lines = txt.readlines()
@@ -341,6 +342,10 @@ def visualize_order(language, language_short, dataset, seed=0):
     print(f'Assert {((df["Count"] * df["Accuracy"]).sum() / df["Count"].sum()):.5} accuracy') # refer to txt files
 
     fig = px.scatter(df, x="Count", y="Accuracy", color="POS", hover_data="Order", log_x=True, log_y=True)
+    fig.update_layout({"plot_bgcolor": "whitesmoke",
+                       "font_size": 16})
+    fig.update_xaxes(gridcolor="lightgrey")
+    fig.update_yaxes(gridcolor="lightgrey")
     fig.show()
 
 
@@ -427,27 +432,171 @@ def calculate_accuracy_df(df):
     )
 
 
-def calculate_mean_std(language_short="ru"):
-    results_folder = "./filled_conllu"
+def calculate_f1score_df(df, conf, vocab): # conf is needed to know the order, vocab simplifies categories extraction
+    from time import time
+    start = time()
+
+    if conf['loss'] == 'oaxe':
+        return None
+
+    # first, extract all categories from vocab
+    grammemes = [g for g in vocab.vocab["grammeme-index"].keys() if "$" not in g] # sorted alphabetically
+
+    order = conf['order']
+    pos_first = conf['pos_first'] if 'pos_first' in conf.keys() else False
+
+    print(f"{order}, {pos_first}")
+
+    if order == 'direct':
+        grammemes = [g for g in grammemes if "POS" in g] + [g for g in grammemes if "POS" not in g]
+
+    elif order == 'reverse' and pos_first is False:
+        grammemes = ([g for g in grammemes if "POS" in g] + [g for g in grammemes if "POS" not in g])[::-1]
+
+    elif order == 'reverse' and pos_first is True:
+        grammemes = [g for g in grammemes if "POS" in g][::-1] + [g for g in grammemes if "POS" not in g][::-1]
+
+    elif order == 'frequency' and pos_first is False:
+        grammemes = sorted(grammemes, key=lambda item: vocab.grammemes_by_freq_indices[item])
+
+    elif order == 'frequency' and pos_first is True:
+        all_sorted = sorted(grammemes, key=lambda item: vocab.grammemes_by_freq_indices[item])
+        grammemes = [g for g in all_sorted if "POS" in g] + [g for g in all_sorted if "POS" not in g]
+
+    elif order == 'reverse_frequency' and pos_first is False:
+        grammemes = sorted(grammemes, key=lambda item: vocab.grammemes_by_freq_indices[item], reverse=True)
+
+    elif order == 'reverse_frequency' and pos_first is True:
+        all_sorted = sorted(grammemes, key=lambda item: vocab.grammemes_by_freq_indices[item], reverse=True)
+        grammemes = [g for g in all_sorted if "POS" in g] + [g for g in all_sorted if "POS" not in g]
+
+
+    grammemes_f1 = {}
+    for grammeme in grammemes:
+        grammeme_scores = len(df[df["tt_full"].str.contains(grammeme) & df["pt_full"].str.contains(grammeme)])
+        grammeme_recall_count = len(df[df["tt_full"].str.contains(grammeme)])
+        grammeme_precision_count = len(df[df["pt_full"].str.contains(grammeme)])
+        if grammeme_recall_count == 0:
+            continue
+        grammeme_recall = grammeme_scores / grammeme_recall_count
+        grammeme_precision = grammeme_scores / (grammeme_precision_count or 1)
+
+        grammeme_f1 = 2 * (grammeme_recall * grammeme_precision) / (grammeme_recall + grammeme_precision + 1e-20)
+        grammemes_f1[grammeme] = grammeme_f1
+
+    print(f"F1-score calculated in {(time() - start):.3} seconds")
+    return grammemes_f1, order, pos_first
+
+
+def visualize_f1score_df():
+    import matplotlib.pyplot as plt
+    fontsize = 16
+
+    results_folder = f"./filled_conllu"
     p = Path(results_folder)
 
-    params = ['-'.join(x.stem.split('-')[1:-1]) for x in p.glob(f"results-{language_short}-*-4*")]
-    keys = []
+    results = [str(x) for x in p.glob("**/F1/MEAN_STD*")]
+    languages = {"Russian": "GSD",
+                 "Russian-SynTagRus": "SynTagRus"}
+    colors = {"direct": "darkblue",
+              "frequency": "skyblue",
+              "reverse_frequency": "gold",
+              "reverse": "orangered"}
+    alphas = {"direct": 0.9,
+              "frequency": 1.0,
+              "reverse_frequency": 0.7,
+              "reverse": 0.6}
+    orders = {"direct": "Как в корпусе",
+              "frequency": "По убыванию частоты",
+              "reverse_frequency": "По возрастанию частоты",
+              "reverse": "Обратный"}
+
+    all_grammemes = set()
+    # fig, ax = plt.subplots(1, 1, figsize=(16, 9))
+    data = defaultdict(lambda: defaultdict(float))
+    for result_file in results:
+        # scores = []
+        order = result_file.split("\\")[-1].split("-")[1]
+        language = result_file.split("\\")[1]
+        marker = "o" if language == "Russian" else "^"
+        with open(result_file, "r") as txt:
+            lines = txt.readlines()
+            for l in lines:
+                grammeme, value = l.split(": ")
+                all_grammemes.add(grammeme)
+                value = float(value.split(" ± ")[0])
+                data[(order, language)][grammeme] = value
+        #         scores.append(value)
+        # ax.scatter(range(len(scores)), scores, label=orders[order], s=15, marker=marker, color=colors[order])
+
+    # ax.set_ylabel("F1-score", fontsize=fontsize)
+    # ax.set_xlabel("Позиция граммемы", fontsize=fontsize)
+    # ax.legend(fontsize=fontsize)
+    #
+    # plt.tight_layout()
+    # plt.savefig("F1-score-positions.png")
+
+    # for v in data.values():
+    #     print(len(v))
+
+    all_grammemes = sorted(list(all_grammemes))
+    all_grammemes = [g for g in all_grammemes if "POS" in g] + [g for g in all_grammemes if "POS" not in g]
+    fig, ax = plt.subplots(1, 1, figsize=(16, 9))
+    for k, i in data.items():
+        # print(i.values())
+        marker = "o" if k[1] == "Russian" else "^"
+        label = ", ".join([orders[k[0]], languages[k[1]]])
+        color = colors[k[0]]
+        alpha = alphas[k[0]]
+        ax.scatter(x=[all_grammemes.index(key) for key in i.keys()], y=list(i.values()), s=75,
+                   alpha=alpha, color=color, label=label, marker=marker)
+    ax.set_ylabel("F-мера", fontsize=fontsize)
+    ax.set_xlabel("Граммемы", fontsize=fontsize)
+
+    import matplotlib.patches as mpatches
+    color_patches = []
+    for order, color in colors.items():
+        color_patches.append(mpatches.Patch(color=color, label=orders[order]))
+
+    color_legend = ax.legend(handles=color_patches, loc='lower left', fontsize=fontsize)
+    ax.add_artist(color_legend)
+
+    shape_patches = []
+    for language, marker in [("Russian", "o"), ("Russian-SynTagRus", "^")]:
+        shape_patches.append(plt.scatter([],[], marker=marker, s=75, color="gray", label=languages[language]))
+
+    shape_legend = ax.legend(handles=shape_patches, loc='lower right', fontsize=fontsize)
+    ax.add_artist(shape_legend)
+
+    ax.grid(axis="x", alpha=0.2)
+
+    ax.set_xticks(range(len(all_grammemes)), all_grammemes, rotation=90, fontsize=fontsize)
+    plt.tight_layout()
+    plt.savefig("F1-score-gramemmes-final.png")
+
+
+# TODO: fix method so it is universal for accuracy and F1-score
+def calculate_mean_std(language="Russian", language_short="ru"):
+    results_folder = f"./filled_conllu/{language}/F1"
+    p = Path(results_folder)
+
+    params = ['-'.join(x.stem.split('-')[1:-1]) for x in p.glob(f"F1-*-4*")]
     for param in params:
+        keys = []
         results = []
-        seeds = [str(x) for x in p.glob(f"results-{param}-*")]
+        seeds = [str(x) for x in p.glob(f"F1-{param}-*")]
         for seed in seeds:
             with open(seed, "r") as f:
-                lines = f.readlines()[1:]
+                lines = f.readlines()
                 results.append([float(v.split(': ')[1]) for v in lines])
                 if len(keys) == 0:
                     keys = [k.split(': ')[0] for k in lines]
-        results = np.array(results)
+        results = np.array(results, dtype=float)
         mean = results.mean(axis=0)
         std = results.std(axis=0)
 
-        with open(f"{results_folder}/mean_std-{param}.txt", "w+") as file:
-            file.write(f"{param}\n")
+        with open(f"{results_folder}/MEAN_STD-{param}.txt", "w+") as file:
+            # file.write(f"{param}\n")
             for key, m_, s_ in zip(keys, mean, std):
                 file.write(f"{key}: {m_:.5} ± {s_:.5}\n")
 
@@ -470,7 +619,7 @@ def evaluate_models(language="Russian", language_short="ru", dataset="dev", save
     # temp = pathlib.PosixPath
     # pathlib.PosixPath = pathlib.WindowsPath
     for seed_number in range(5):
-        model_paths = [str(x) for x in p.glob(f"*order_agnostic/{language}/seed_{seed_number}/model.pt")]
+        model_paths = [str(x) for x in p.glob(f"*/{language}/seed_{seed_number}/model.pt")]
         vocab_paths = [str(x) for x in p.glob(f"*/{language}/vocab.pickle")]
 
         for model_path, vocab_path in zip(model_paths, vocab_paths):
@@ -484,7 +633,7 @@ def evaluate_models(language="Russian", language_short="ru", dataset="dev", save
 
             uniq_words = get_uniq_words(conf, vocab, pyconll.load_from_file(conll_input))
             print("Filling files...")
-            fill(conf, vocab, model, uniq_words, conll_input, conll_output)
+            # fill(conf, vocab, model, uniq_words, conll_input, conll_output)
             print("Files filled")
 
             print("Constructing DataFrame...")
@@ -493,29 +642,44 @@ def evaluate_models(language="Russian", language_short="ru", dataset="dev", save
                 df.to_csv(f"{language}-{dataset}-{seed_number}.csv", na_rep="NULL", encoding="utf-8")
             print("DataFrame done")
 
-            with open(f"./filled_conllu/results-{language_short}-{dataset}-{model_name}-{seed_number}.txt", "w+") as file:
-                file.write(f"{language}, {dataset}, {model_name}\n")
-                results = calculate_accuracy_df(df)
-                for key in results:
-                    file.write(f"{key}: {results[key]:.5}\n")
+            f1 = calculate_f1score_df(df, conf, vocab)
+            if f1:
+                grammemes_f1, order, pos_first = f1
+                with open(f"filled_conllu/{language}/F1/F1-{order}-{pos_first}-{seed_number}.txt", "w+") as txt:
+                    for key in grammemes_f1:
+                        txt.write(f"{key}: {grammemes_f1[key]:.5}\n")
+
+            # TODO: fix files format to match F1-score files
+            # with open(f"./filled_conllu/{language}/accuracy/results-{language_short}-{dataset}-{model_name}-{seed_number}.txt", "w+") as file:
+            #     file.write(f"{language}, {dataset}, {model_name}\n")
+            #     results = calculate_accuracy_df(df)
+            #     f1 = calculate_f1score_df(df, conf, vocab)
+            #     for key in results:
+            #         file.write(f"{key}: {results[key]:.5}\n")
+            #     file.write(f"f1-score: {f1:.5}\n")
 
 
 if __name__ == "__main__":
-    lang, lang_short, dset = ("Russian", "ru", "dev")
-    # lang, lang_short, dset = ("Russian-SynTagRus", "ru_syntagrus", "dev")
+    lang, lang_short, dset = ("Russian", "ru", "test")
+    # lang, lang_short, dset = ("Russian-SynTagRus", "ru_syntagrus", "test")
 
-    # evaluate_models(language=lang, language_short=lang_short, dataset=dset, save_df=True)
-    # calculate_mean_std(language_short=lang_short)
+    evaluate_models(language=lang, language_short=lang_short, dataset=dset, save_df=False)
+    calculate_mean_std(language=lang, language_short=lang_short)
+
+    visualize_f1score_df()
+
     # predict_sentence('Каждый охотник желает знать, где сидит фазан.', "prediction.txt")
-    for s in range(5):
-        print(f"====================\n"
-              f"Analyze order: run {s}")
-        analyze_order(language=lang, language_short=lang_short, dataset=dset, seed=s)
-    for s in range(5):
-        print(f"======================\n"
-              f"Visualize order: run {s}")
-        visualize_order(language=lang, language_short=lang_short, dataset=dset, seed=s)
+
+
+    # for s in range(5):
+    #     print(f"====================\n"
+    #           f"Analyze order: run {s}")
+    #     analyze_order(language=lang, language_short=lang_short, dataset=dset, seed=s)
+    # for s in range(5):
+    #     print(f"======================\n"
+    #           f"Visualize order: run {s}")
+    #     visualize_order(language=lang, language_short=lang_short, dataset=dset, seed=s)
 
     # TODO: calculate number of orders (average among all sets)
-    # split groups further: by gender, animacy or other
-    # add train set and look only at correct predictions
+    # TODO: split groups further: by gender, animacy or other
+    # TODO: add train set and look only at correct predictions
