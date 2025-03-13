@@ -16,10 +16,14 @@ from pathlib import Path
 import fasttext
 import pyconll
 from tqdm import tqdm
+from time import time
 import re
 
 
 device = 'cuda' if cuda.is_available() else 'cpu'
+
+lang_full2short = {"Russian": "ru",
+                   "Russian-SynTagRus": "ru_syntagrus"}
 
 
 def load_model_vocab(model_file, vocab_file):
@@ -121,10 +125,10 @@ def fill(conf, vocab, model, uniq_words, conll_input, conll_output):
     It is then used to retrieve positions of predicted grammemes.
     """
 
+    print("Filling files...")
     conll = pyconll.load_from_file(conll_input)
-    txt_output = conll_output[:-6] + "txt"
+    txt_output = conll_output.replace(".conllu", ".txt")
 
-    print(f"{len(uniq_words)} oov words")
     print("Loading fastText...")
     ft = fasttext.load_model("./filled_conllu/wiki.ru.bin")
     oov_pretrained_vocab = {}
@@ -132,7 +136,6 @@ def fill(conf, vocab, model, uniq_words, conll_input, conll_output):
         if word.lower() in uniq_words:
             oov_pretrained_vocab[word.lower()] = ft[word]
 
-    print("Filling file...")
     progress_bar = tqdm(conll, total=len(conll), colour='#bbbbbb')
     with open(txt_output, "w+", encoding='utf-8') as txt:
         for number, sentence in enumerate(progress_bar):
@@ -190,14 +193,17 @@ def fill(conf, vocab, model, uniq_words, conll_input, conll_output):
 
     with open(conll_output, 'w+', encoding='utf-8') as f:
         conll.write(f)
+    print("Files filled")
 
 
-def analyze_order(language, language_short, dataset, seed=0):
+def analyze_order(language, dataset, seed=0):
     """
     Method creates files and DataFrames that contain information about order of predictions.
     See inline comments for details.
     For arguments meanings, see evaluate_models().
     """
+
+    language_short = lang_full2short[language]
 
     # 1. load txt file created in fill()
     txt_input = f"filled_conllu/{language}/{language_short}-ud-{dataset}-order_agnostic-{seed}.txt"
@@ -242,7 +248,7 @@ def analyze_order(language, language_short, dataset, seed=0):
     df = pd.DataFrame(data=data_cats, columns=columns)
     print(f"TOTAL WORDS: {len(df)}")
 
-    # the loops below contain repetitive code, consider refactoring to a separate method with arguments
+    # TODO: the loops below contain repetitive code, consider refactoring to a separate method with arguments
 
     # 4.1 write to file possible orders for sets of grammemes, i.e. categories AND values
     counter = 0
@@ -330,11 +336,11 @@ def analyze_order(language, language_short, dataset, seed=0):
             txt.write(f"{i} {j}\n")
 
 
-def visualize_order(language, language_short, dataset, seed=0):
+def visualize_order(language, dataset, seed=0):
     """Method uses Plotly to visualize orders of predictions."""
 
     import plotly.express as px
-    csv_input = f"filled_conllu/_analyze_order/unique_pos-{language_short}-{dataset}-{seed}.csv"
+    csv_input = f"filled_conllu/_analyze_order/unique_pos-{lang_full2short[language]}-{dataset}-{seed}.csv"
     df = pd.read_csv(csv_input, na_values="nan")
     # just to make sure that DataFrame was saved and loaded correctly (compare to printouts from analyze_order())
     print(f'Assert {df["POS"].nunique(dropna=False)} unique groups')
@@ -350,6 +356,7 @@ def visualize_order(language, language_short, dataset, seed=0):
 
 
 def get_uniq_words(conf, vocab, conll):
+    start = time()
     train_words = set(vocab.vocab["word-index"])
     test_words = set()
     for sentence in conll:
@@ -360,18 +367,21 @@ def get_uniq_words(conf, vocab, conll):
                 else:
                     test_words.add(word.form.lower())
     unseen_words = test_words - train_words
+    print(f"Found {len(unseen_words)} oov words in {(time() - start):.3} seconds")
     return unseen_words
 
 
-def construct_df(conll_true, conll_predicted, uniq_words):
+def construct_df(conll_true, conll_predicted, uniq_words, save_df):
     """Constructs DataFrame according to ground truth and model predictions.
 
     Args:
         conll_true (str): Ground truth file from UD library.
         conll_predicted (str): File filled by model.
         uniq_words (set): Set of oov words.
-
+        save_df (bool): Determines whether to save DataFrame of all words to csv.
     """
+
+    start = time()
 
     conll_true = pyconll.load_from_file(conll_true)
     conll_predicted = pyconll.load_from_file(conll_predicted)
@@ -409,6 +419,12 @@ def construct_df(conll_true, conll_predicted, uniq_words):
     df['tt_morph'] = df.tt_full.str.replace(r'(POS=[A-Za-z]+\|?)', '', regex=True)
     df['pt_morph'] = df.pt_full.str.replace(r'(POS=[A-Za-z]+\|?)', '', regex=True)
 
+    if save_df is True:
+        df.to_csv(f"{language}-{dataset}-{seed_number}.csv", na_rep="NULL", encoding="utf-8")
+        print(f"DataFrame constructed and saved in {(time() - start):.3} seconds")
+    else:
+        print(f"DataFrame constructed in {(time() - start):.3} seconds")
+
     return df
 
 
@@ -433,7 +449,6 @@ def calculate_accuracy_df(df):
 
 
 def calculate_f1score_df(df, conf, vocab): # conf is needed to know the order, vocab simplifies categories extraction
-    from time import time
     start = time()
 
     if conf['loss'] == 'oaxe':
@@ -445,7 +460,7 @@ def calculate_f1score_df(df, conf, vocab): # conf is needed to know the order, v
     order = conf['order']
     pos_first = conf['pos_first'] if 'pos_first' in conf.keys() else False
 
-    print(f"{order}, {pos_first}")
+    # print(f"{order}, {pos_first}")
 
     if order == 'direct':
         grammemes = [g for g in grammemes if "POS" in g] + [g for g in grammemes if "POS" not in g]
@@ -485,40 +500,42 @@ def calculate_f1score_df(df, conf, vocab): # conf is needed to know the order, v
         grammemes_f1[grammeme] = grammeme_f1
 
     print(f"F1-score calculated in {(time() - start):.3} seconds")
-    return grammemes_f1, order, pos_first
+    return grammemes_f1
 
 
 def visualize_f1score_df():
     import matplotlib.pyplot as plt
     fontsize = 16
-
-    results_folder = f"./filled_conllu"
-    p = Path(results_folder)
-
-    results = [str(x) for x in p.glob("**/F1/MEAN_STD*")]
     languages = {"Russian": "GSD",
                  "Russian-SynTagRus": "SynTagRus"}
+    markers = {"Russian": "o",
+               "Russian-SynTagRus": "^"}
     colors = {"direct": "darkblue",
               "frequency": "skyblue",
-              "reverse_frequency": "gold",
+              "frequency_reverse": "gold",
               "reverse": "orangered"}
     alphas = {"direct": 0.9,
               "frequency": 1.0,
-              "reverse_frequency": 0.7,
-              "reverse": 0.6}
+              "frequency_reverse": 0.8,
+              "reverse": 0.4}
     orders = {"direct": "Как в корпусе",
               "frequency": "По убыванию частоты",
-              "reverse_frequency": "По возрастанию частоты",
+              "frequency_reverse": "По возрастанию частоты",
               "reverse": "Обратный"}
+
+    results_folder = "filled_conllu"
+    p = Path(results_folder)
+
+    results = [str(x) for x in p.glob("**/F1/MEAN_STD*")]
 
     all_grammemes = set()
     # fig, ax = plt.subplots(1, 1, figsize=(16, 9))
     data = defaultdict(lambda: defaultdict(float))
     for result_file in results:
         # scores = []
-        order = result_file.split("\\")[-1].split("-")[1]
+        order = result_file.split("\\")[-1].split("-")[2].replace(".txt", "")
         language = result_file.split("\\")[1]
-        marker = "o" if language == "Russian" else "^"
+        marker = markers[language]
         with open(result_file, "r") as txt:
             lines = txt.readlines()
             for l in lines:
@@ -543,8 +560,7 @@ def visualize_f1score_df():
     all_grammemes = [g for g in all_grammemes if "POS" in g] + [g for g in all_grammemes if "POS" not in g]
     fig, ax = plt.subplots(1, 1, figsize=(16, 9))
     for k, i in data.items():
-        # print(i.values())
-        marker = "o" if k[1] == "Russian" else "^"
+        marker = markers[k[1]]
         label = ", ".join([orders[k[0]], languages[k[1]]])
         color = colors[k[0]]
         alpha = alphas[k[0]]
@@ -562,7 +578,8 @@ def visualize_f1score_df():
     ax.add_artist(color_legend)
 
     shape_patches = []
-    for language, marker in [("Russian", "o"), ("Russian-SynTagRus", "^")]:
+    for language in ["Russian", "Russian-SynTagRus"]:
+        marker = markers[language]
         shape_patches.append(plt.scatter([],[], marker=marker, s=75, color="gray", label=languages[language]))
 
     shape_legend = ax.legend(handles=shape_patches, loc='lower right', fontsize=fontsize)
@@ -572,19 +589,18 @@ def visualize_f1score_df():
 
     ax.set_xticks(range(len(all_grammemes)), all_grammemes, rotation=90, fontsize=fontsize)
     plt.tight_layout()
-    plt.savefig("F1-score-gramemmes-final.png")
+    plt.savefig("F1-final.png")
 
 
-# TODO: fix method so it is universal for accuracy and F1-score
-def calculate_mean_std(language="Russian", language_short="ru"):
-    results_folder = f"./filled_conllu/{language}/F1"
+def calculate_mean_std(language="Russian", metrics="accuracy"):
+    results_folder = f"filled_conllu/{language}/{metrics}"
     p = Path(results_folder)
 
-    params = ['-'.join(x.stem.split('-')[1:-1]) for x in p.glob(f"F1-*-4*")]
+    params = ['-'.join(x.stem.split('-')[1:-1]) for x in p.glob(f"*-4*")]
     for param in params:
         keys = []
         results = []
-        seeds = [str(x) for x in p.glob(f"F1-{param}-*")]
+        seeds = [str(x) for x in p.glob(f"*-{param}-*")]
         for seed in seeds:
             with open(seed, "r") as f:
                 lines = f.readlines()
@@ -596,23 +612,22 @@ def calculate_mean_std(language="Russian", language_short="ru"):
         std = results.std(axis=0)
 
         with open(f"{results_folder}/MEAN_STD-{param}.txt", "w+") as file:
-            # file.write(f"{param}\n")
-            for key, m_, s_ in zip(keys, mean, std):
-                file.write(f"{key}: {m_:.5} ± {s_:.5}\n")
+            for key, mean_value, std_value in zip(keys, mean, std):
+                file.write(f"{key}: {mean_value:.5} ± {std_value:.5}\n")
 
 
-def evaluate_models(language="Russian", language_short="ru", dataset="dev", save_df=True):
+def evaluate_models(language="Russian", dataset="dev", save_df=False):
     """Uses trained models to fill conllu files, then evaluates metrics and writes results to .txt files.
 
     Args:
-        language (str, default 'Russian'): full language name as in UD library, but without 'UD_' prefix,
+        language (str, default 'Russian'): Full language name as in UD library, but without 'UD_' prefix,
             e.g. 'Russian', 'Russian-SynTagRus'.
-        language_short (str, default 'ru'): short language name as in conllu files, e.g. 'ru', 'ru_syntagrus'.
         dataset (str, default 'dev'): 'dev' or 'test'.
-        save_df (bool, default True): determines whether to save DataFrame of all words to csv.
+        save_df (bool, default False): Determines whether to save DataFrame of all words to csv.
     """
 
     trained_models_folder = "./trained_models"
+    language_short = lang_full2short[language]
 
     p = Path(trained_models_folder)
 
@@ -624,7 +639,7 @@ def evaluate_models(language="Russian", language_short="ru", dataset="dev", save
 
         for model_path, vocab_path in zip(model_paths, vocab_paths):
             model_name = model_path.split('\\')[1]
-            print(f"{language}, {dataset}, {model_name}, run {seed_number}")
+            print(f"\n{language}, {dataset}, {model_name}, run {seed_number}")
             conf, vocab, model = load_model_vocab(model_path, vocab_path)
             # pathlib.PosixPath = temp
 
@@ -632,54 +647,43 @@ def evaluate_models(language="Russian", language_short="ru", dataset="dev", save
             conll_output = f"./filled_conllu/{language}/{language_short}-ud-{dataset}-{model_name}-{seed_number}.conllu"
 
             uniq_words = get_uniq_words(conf, vocab, pyconll.load_from_file(conll_input))
-            print("Filling files...")
-            # fill(conf, vocab, model, uniq_words, conll_input, conll_output)
-            print("Files filled")
 
-            print("Constructing DataFrame...")
-            df = construct_df(conll_input, conll_output, uniq_words)
-            if save_df:
-                df.to_csv(f"{language}-{dataset}-{seed_number}.csv", na_rep="NULL", encoding="utf-8")
-            print("DataFrame done")
+            # fill(conf, vocab, model, uniq_words, conll_input, conll_output)
+            df = construct_df(conll_input, conll_output, uniq_words, save_df)
 
             f1 = calculate_f1score_df(df, conf, vocab)
             if f1:
-                grammemes_f1, order, pos_first = f1
-                with open(f"filled_conllu/{language}/F1/F1-{order}-{pos_first}-{seed_number}.txt", "w+") as txt:
-                    for key in grammemes_f1:
-                        txt.write(f"{key}: {grammemes_f1[key]:.5}\n")
+                with open(f"filled_conllu/{language}/F1/F1-{dataset}-{model_name}-{seed_number}.txt", "w+") as txt:
+                    for key in f1:
+                        txt.write(f"{key}: {f1[key]:.5}\n")
 
-            # TODO: fix files format to match F1-score files
-            # with open(f"./filled_conllu/{language}/accuracy/results-{language_short}-{dataset}-{model_name}-{seed_number}.txt", "w+") as file:
-            #     file.write(f"{language}, {dataset}, {model_name}\n")
-            #     results = calculate_accuracy_df(df)
-            #     f1 = calculate_f1score_df(df, conf, vocab)
-            #     for key in results:
-            #         file.write(f"{key}: {results[key]:.5}\n")
-            #     file.write(f"f1-score: {f1:.5}\n")
+            accuracy = calculate_accuracy_df(df)
+            with open(f"filled_conllu/{language}/accuracy/accuracy-{dataset}-{model_name}-{seed_number}.txt", "w+") as txt:
+                for key in accuracy:
+                    txt.write(f"{key}: {accuracy[key]:.5}\n")
 
 
 if __name__ == "__main__":
-    lang, lang_short, dset = ("Russian", "ru", "test")
-    # lang, lang_short, dset = ("Russian-SynTagRus", "ru_syntagrus", "test")
-
-    evaluate_models(language=lang, language_short=lang_short, dataset=dset, save_df=False)
-    calculate_mean_std(language=lang, language_short=lang_short)
-
-    visualize_f1score_df()
-
     # predict_sentence('Каждый охотник желает знать, где сидит фазан.', "prediction.txt")
 
+    # lang, dset = ("Russian", "test")
+    lang, dset = ("Russian-SynTagRus", "test")
+
+    # evaluate_models(language=lang, dataset=dset, save_df=False)
+    # calculate_mean_std(language=lang, metrics="accuracy")
+
+    visualize_f1score_df()
 
     # for s in range(5):
     #     print(f"====================\n"
     #           f"Analyze order: run {s}")
-    #     analyze_order(language=lang, language_short=lang_short, dataset=dset, seed=s)
+    #     analyze_order(language=lang, dataset=dset, seed=s)
     # for s in range(5):
     #     print(f"======================\n"
     #           f"Visualize order: run {s}")
-    #     visualize_order(language=lang, language_short=lang_short, dataset=dset, seed=s)
+    #     visualize_order(language=lang, dataset=dset, seed=s)
 
-    # TODO: calculate number of orders (average among all sets)
-    # TODO: split groups further: by gender, animacy or other
-    # TODO: add train set and look only at correct predictions
+# IDEAS FOR FURTHER ORDER ANALYSIS
+# calculate number of orders (average among all sets)
+# split groups further: by gender, animacy or other
+# add train set and look only at correct predictions
