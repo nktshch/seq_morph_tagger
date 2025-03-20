@@ -261,7 +261,7 @@ def collate_batch(batch_w_sentences, pad_id=0, sos_id=1, eos_id=2):
         eos_id (int, default 2): The id of the eos (end of sequence) token.
 
     Returns:
-        tuple: (words_batch, chars_batch, labels_batch).
+        tuple: (words_batch, chars_batch, labels_batch, raw_sentences).
             labels_batch is None if the dataset is for validation or test.
             All the elements in tuple have type torch.Tensor. Size of words_batch is (max_sentence_length, batch_size).
             Size of chars_batch is (batch_size * max_sentence_length, max_word_length). Size of labels_batch is
