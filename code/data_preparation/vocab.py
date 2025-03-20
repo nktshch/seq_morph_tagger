@@ -214,23 +214,43 @@ class Vocab:
     def get_sorting_order(self):
         """Sorts grammemes according to config, returns dictionary that will be used in sentence_to_indices()."""
 
+        # there are actually 10 unique orders for xe loss because POS category is the most frequent
+
         grammemes = [g for g in self.vocab["grammeme-index"].keys() if "$" not in g]
-        if self.conf['order'] == 'direct':
+        if self.conf['order'] == 'direct': # [1st]
             sorting_order = [g for g in grammemes if "POS" in g] + [g for g in grammemes if "POS" not in g]
-        elif self.conf['order'] == 'reverse' and self.conf['pos_first'] is False:
+
+        elif self.conf['order'] == 'reverse' and self.conf['pos_first'] is False: # [2nd]
             sorting_order = ([g for g in grammemes if "POS" in g] + [g for g in grammemes if "POS" not in g])[::-1]
-        elif self.conf['order'] == 'reverse' and self.conf['pos_first'] is True:
+        elif self.conf['order'] == 'reverse' and self.conf['pos_first'] is True: # [3rd]
             sorting_order = [g for g in grammemes if "POS" in g][::-1] + [g for g in grammemes if "POS" not in g][::-1]
-        elif self.conf['order'] == 'frequency' and self.conf['pos_first'] is False:
-            sorting_order = list(self.grammemes_by_freq.keys())
-        elif self.conf['order'] == 'frequency' and self.conf['pos_first'] is True:
-            sorting_order = [g for g in list(self.grammemes_by_freq.keys()) if "POS" in g] + \
-                            [g for g in list(self.grammemes_by_freq.keys()) if "POS" not in g]
-        elif self.conf['order'] == 'reverse_frequency' and self.conf['pos_first'] is False:
-            sorting_order = list(self.grammemes_by_freq.keys())[::-1]
-        elif self.conf['order'] == 'reverse_frequency' and self.conf['pos_first'] is True:
-            sorting_order = [g for g in list(self.grammemes_by_freq.keys()) if "POS" in g][::-1] + \
-                            [g for g in list(self.grammemes_by_freq.keys()) if "POS" not in g][::-1]
+
+        elif self.conf['order'] == 'frequency' and self.conf['sort_by'] == "grammemes":
+            if self.conf['pos_first'] is False: # [4th]
+                sorting_order = list(self.grammemes_by_freq.keys())
+            else: # (pos_first is True) [5th]
+                sorting_order = [g for g in list(self.grammemes_by_freq.keys()) if "POS" in g] + \
+                                [g for g in list(self.grammemes_by_freq.keys()) if "POS" not in g]
+        elif self.conf['order'] == 'frequency' and self.conf['sort_by'] == "categories": # [6th]
+            sorting_order = sorted(grammemes,
+                                   key=lambda i: self.categories_by_freq[i.split("=")[0]],
+                                   reverse=True)
+
+        elif self.conf['order'] == 'reverse_frequency' and self.conf['sort_by'] == "grammemes":
+            if self.conf['pos_first'] is False: # [7th]
+                sorting_order = list(self.grammemes_by_freq.keys())[::-1]
+            else: # (pos_first is True) [8th]
+                sorting_order = [g for g in list(self.grammemes_by_freq.keys()) if "POS" in g][::-1] + \
+                                [g for g in list(self.grammemes_by_freq.keys()) if "POS" not in g][::-1]
+        elif self.conf['order'] == 'reverse_frequency' and self.conf['sort_by'] == "categories":
+            if self.conf['pos_first'] is False: # [9th]
+                sorting_order = sorted(grammemes,
+                                       key=lambda i: self.categories_by_freq[i.split("=")[0]])
+            else: # (pos_first is True) [10th]
+                if_pos_were_false = sorted(grammemes,
+                                           key=lambda i: self.categories_by_freq[i.split("=")[0]])
+                sorting_order = [g for g in if_pos_were_false if "POS" in g] + \
+                                [g for g in if_pos_were_false if "POS" not in g]
         else:
             raise ValueError(f"Unknown order of grammemes: {self.conf['order']}, {self.conf['pos_first']}")
         self.sorting_order = {g: i for i, g in enumerate(sorting_order)}
@@ -274,9 +294,14 @@ class Vocab:
             for word in sentence_pyconll:
                 if '.' not in word.id and '-' not in word.id:
                     grammeme_strings = set()
+                    category_strings = set()
                     if word.upos is not None:
                         grammeme_strings.add("POS=" + word.upos)
+                        category_strings.add("POS")
                     grammeme_strings.update([key + "=" + feat for key in list(word.feats) for feat in list(word.feats[key])])
+                    category_strings.update([key for key in list(word.feats)])
+                    grammeme_strings.update([c + "=None" for c in self.categories_by_freq.keys()
+                                             if c not in category_strings])
                     grammeme_strings = sorted(list(grammeme_strings),
                                               key=lambda item: self.sorting_order.get(item, len(self.sorting_order)))
                     grammeme_ids = [self.vocab["grammeme-index"].get(g, unk_grammeme_id) for g in grammeme_strings]

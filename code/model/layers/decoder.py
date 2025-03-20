@@ -20,6 +20,7 @@ class Decoder(nn.Module):
         self.conf = conf
         self.vocab = vocab
         self.sos_id = sos_id
+        self.decoder_max_iterations = len(self.vocab.categories_by_freq)
         self.grammeme_embeddings = nn.Embedding(len(self.vocab.vocab['grammeme-index']),
                                                 self.conf["grammeme_embeddings_dimension"])
         nn.init.xavier_uniform_(self.grammeme_embeddings.weight)
@@ -78,7 +79,7 @@ class Decoder(nn.Module):
 
         else:  # using generated grammemes as the next input
             grammemes = labels[0]
-            for _ in range(self.conf['decoder_max_iterations']):
+            for _ in range(self.decoder_max_iterations):
                 hk, ck = self.grammemeLSTMcell(grammemes, (hk, ck))
                 probabilities_batch = self.linear(hk)
                 probabilities += [probabilities_batch]
