@@ -15,32 +15,6 @@ import numpy as np
 import random
 
 
-def different_orders():
-    # method is used for checking that orders are loaded as expected
-    conf = parse_arguments()
-
-    pos_first = [False, True]
-    orders = ["direct", "reverse", "frequency", "reverse_frequency"]
-
-    results = []
-    for o in orders:
-        for p in pos_first:
-            conf['order'] = o
-            conf['pos_first'] = p
-            conf['vocab_file'] = f"{conf['model']}/order_test_vocab_{o}_{p}.pickle"
-
-            vocab = get_vocab(conf, rewrite=True)
-            data = CustomDataset(conf, vocab, ["./data/order_test.conllu"])
-
-            (_, labels), sentence = data[0]
-            tag_ids = labels[2]
-            tag = [vocab.vocab["index-grammeme"][g] for g in tag_ids]
-            results += [(tag, o, p)]
-
-    for r in results:
-        print(*r)
-
-
 def parse_arguments():
     """Loads config from json file and adds command line arguments to it."""
 
