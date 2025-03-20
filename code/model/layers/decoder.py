@@ -20,7 +20,8 @@ class Decoder(nn.Module):
         self.conf = conf
         self.vocab = vocab
         self.sos_id = sos_id
-        self.decoder_max_iterations = len(self.vocab.categories_by_freq)
+        self.decoder_max_iterations = len(self.vocab.categories_by_freq) if self.conf['same_length'] is True \
+            else self.conf['decoder_max_iterations']
         self.grammeme_embeddings = nn.Embedding(len(self.vocab.vocab['grammeme-index']),
                                                 self.conf["grammeme_embeddings_dimension"])
         nn.init.xavier_uniform_(self.grammeme_embeddings.weight)

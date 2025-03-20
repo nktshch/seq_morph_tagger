@@ -30,7 +30,8 @@ class Trainer(nn.Module):
         self.conf = conf
         self.model = model
         self.vocab = model.vocab
-        self.label_length = len(self.vocab.categories_by_freq)
+        self.label_length = len(self.vocab.categories_by_freq) if self.conf['same_length'] is True \
+            else None
         self.directory = f"{self.conf['model']}/seed_{run_number}"
 
         if subset_size == 0:
@@ -206,16 +207,22 @@ class Trainer(nn.Module):
         best_permutations_ = torch.tensor(range(probabilities_.shape[2])).to(targets).repeat((probabilities_.shape[0], 1))
         for i in range(targets.shape[0]):  # for 1 sequence in a batch
             target_row = targets[i]
-            if target_row[0] == 0:  # skip if row is padding itself
+            n_nonpad = target_row.ne(0).sum()  # to exclude padding (0 is pad_id)
+            if n_nonpad == 0:  # skip if row is padding itself
                 continue
+            if self.conf['same_length'] is False:
+                n_nonpad -= 1 # in this case we should exclude eos token
+
+            target_row = target_row[:n_nonpad] # remove padding
             probabilities_matrix = probabilities[i]  # probabilities for this sequence (grammemes_in_vocab, max_label_length)
+            probabilities_matrix = probabilities_matrix[:, :n_nonpad] # remove probabilities on padded labels
 
             cost_matrix = -probabilities_matrix[target_row]  # get cost matrix for lsa
             cost_matrix_numpy = cost_matrix.detach().cpu().numpy()
             # permute because of how lsa works, we need rows indices, not column
 
             _, col_indices = lsa(cost_matrix_numpy)
-            best_permutations_[i] = torch.tensor(col_indices).to(best_permutations_)
+            best_permutations_[i, :n_nonpad] = torch.tensor(col_indices).to(best_permutations_)
 
         best_permutations = best_permutations_[:, None, :]
         best_permutations = best_permutations.expand_as(probabilities)
@@ -296,7 +303,7 @@ def collate_batch(batch_w_sentences, label_length, pad_id=0, sos_id=1, eos_id=2)
     chars_batch = chars_batch.view(-1, chars_batch.shape[2])
 
     if batch[0][1][0]:
-        labels_batch = collate_labels(batch, max_sentence_length, label_length, pad_id, sos_id)
+        labels_batch = collate_labels(batch, max_sentence_length, label_length, pad_id, sos_id, eos_id)
         labels_batch = torch.tensor(labels_batch, dtype=torch.long)
         labels_batch = labels_batch.view(-1, labels_batch.shape[2]).permute(1, 0)
     else:
@@ -304,15 +311,23 @@ def collate_batch(batch_w_sentences, label_length, pad_id=0, sos_id=1, eos_id=2)
     return words_batch, chars_batch, labels_batch, raw_sentences
 
 
-def collate_labels(batch, max_sentence_length, label_length, pad_id=0, sos_id=1):
+def collate_labels(batch, max_sentence_length, label_length, pad_id=0, sos_id=1, eos_id=2):
+    if not label_length:
+        tags = [element[1] for element in batch]  # tags is a list of all lists of grammemes
+        max_label_length = 2 + max([max(map(lambda x: len(x), tag)) for tag in tags])  # +2 because of sos and eos tokens
+    else:
+        max_label_length = 1 + label_length # +1 because of sos token
+
     labels_batch = []
     for words, labels in batch:
         labels_indices = []
         for label in labels:
             label.insert(0, sos_id)  # id of the sos token must be 1
+            if not label_length:
+                label += [eos_id]  # id of the eos token must be 2
+                label += [pad_id] * (max_label_length - len(label))
             labels_indices += [label]
-        labels_indices += [[pad_id] * (label_length + 1)] * (max_sentence_length - len(words)) # +1 because of SOS
-
+        labels_indices += [[pad_id] * max_label_length] * (max_sentence_length - len(words))
         labels_batch += [labels_indices]
     return labels_batch
 

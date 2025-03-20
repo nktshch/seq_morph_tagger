@@ -162,9 +162,10 @@ class Vocab:
                             grammemes_frequencies[key + "=" + feat] += 1
 
         categories = list(categories)
-        for cat in categories:
-            grammemes_frequencies[cat + "=None"] = self.words_count - categories_frequencies[cat]
-            grammemes.add(cat + "=None")
+        if self.conf['same_length'] is True:
+            for cat in categories:
+                grammemes_frequencies[cat + "=None"] = self.words_count - categories_frequencies[cat]
+                grammemes.add(cat + "=None")
         grammemes = [self.conf["PAD"], self.conf["SOS"], self.conf["EOS"], self.conf["UNK"]] + sorted(list(grammemes))
         self.grammemes_by_freq = dict(sorted(grammemes_frequencies.items(), key=lambda item: item[1], reverse=True))
         self.categories_by_freq = dict(sorted(categories_frequencies.items(), key=lambda item: item[1], reverse=True))
@@ -300,8 +301,9 @@ class Vocab:
                         category_strings.add("POS")
                     grammeme_strings.update([key + "=" + feat for key in list(word.feats) for feat in list(word.feats[key])])
                     category_strings.update([key for key in list(word.feats)])
-                    grammeme_strings.update([c + "=None" for c in self.categories_by_freq.keys()
-                                             if c not in category_strings])
+                    if self.conf['same_length'] is True:
+                        grammeme_strings.update([c + "=None" for c in self.categories_by_freq.keys()
+                                                 if c not in category_strings])
                     grammeme_strings = sorted(list(grammeme_strings),
                                               key=lambda item: self.sorting_order.get(item, len(self.sorting_order)))
                     grammeme_ids = [self.vocab["grammeme-index"].get(g, unk_grammeme_id) for g in grammeme_strings]
